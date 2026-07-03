@@ -142,6 +142,7 @@
   <a href="#changelog">Changelog</a>
   <a href="#deliverables">Deliverables</a>
   <a href="#costs">Costs</a>
+  <a href="ops.html">📡 Ops Live</a>
   <a href="chat.html" style="color:var(--coral);font-weight:600">💬 Ask the Assistant</a>
 </nav>
 
@@ -250,6 +251,9 @@ const LAST_UPDATED = "4 July 2026, 8:00 PM PKT";
 const N8N_BASE = "https://sochconsulting.app.n8n.cloud/workflow/";
 
 const CHANGELOG = [
+  { date:"4 Jul 2026, 11:00 PM", wf:"This dashboard",
+    what:"Added live Ops tab + assistant scope update",
+    note:"The real-time Soch Ops dashboard (live executions, telemetry costs, health) is now a tab here (access code required). The chat assistant now sticks to workflow facts and the changelog." },
   { date:"4 Jul 2026, 9:30 PM", wf:"Jarvis — Failure Watchdog",
     what:"Failure Watchdog re-enabled",
     note:"Fleet-wide failure alerting is back on. The rest of the Jarvis suite (briefing, autofix chain) stays disabled for now." },
@@ -286,9 +290,6 @@ const DELIVERABLES = [
   { type:"Client deliverable", title:"Deal Desk — AI Slide Generator",
     desc:"Call transcript → Claude analysis → branded PowerPoint deck, generated and delivered automatically via Apps Script.",
     meta:"n8n + Apps Script + Slides", link:"#" },
-  { type:"Web build", title:"AutoFlow — GenAI Course Project",
-    desc:"Full-stack Next.js app (Claude + n8n + Resend) deployed on Vercel.",
-    meta:"Live at autoflow-dusky.vercel.app", link:"https://autoflow-dusky.vercel.app" },
   { type:"Documentation", title:"Workflow Runbooks + Failure Playbook",
     desc:"Every workflow documented in the GitHub repo, plus a living 'learning from failure' playbook so any error seen once never costs debugging time twice.",
     meta:"GitHub — soch-assistant repo", link:"#" }

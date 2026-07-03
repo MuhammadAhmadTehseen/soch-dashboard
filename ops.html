@@ -1,0 +1,1482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Soch Ops Dashboard</title>
+<!--
+================================================================================
+  SOCH OPS DASHBOARD — single-file, no build step, no framework.
+  Reads from two Google Sheets tabs via Sheets API v4 (public read, API key).
+
+  GOOGLE SHEETS SCHEMA
+  --------------------
+  Sheet tab "executions" (row 1 = headers):
+    A: workflow_name | B: workflow_id | C: execution_id | D: status
+    E: started_at (ISO8601) | F: finished_at (ISO8601) | G: duration_ms
+    H: error_message | I: execution_url
+
+  Sheet tab "token_logs" (row 1 = headers):
+    A: execution_id | B: workflow_name | C: model | D: input_tokens
+    E: output_tokens | F: cost_usd | G: logged_at (ISO8601)
+
+  STATUS VALUES expected in column D: success | error | running | (anything else => idle/unknown)
+
+  DERIVED METRIC SANITY CHECKS (verified before implementing):
+  ------------------------------------------------------------
+  - Executions Today: count executions where started_at falls on local today's date.
+      e.g. 3 runs today -> 3. Zero runs -> 0 (no divide).
+  - Success Rate 7d: successCount / (successCount + errorCount) within last 7d * 100.
+      e.g. 9 success, 1 error -> 9/10 = 90.0%. If 0 finished runs -> show "—" (avoid /0).
+      Running rows are excluded from the denominator (not yet resolved).
+  - Failures Today: count status==error with started_at today. e.g. 2 -> 2.
+  - Avg Duration: mean of duration_ms over finished runs in last 7d.
+      e.g. [1000,3000] -> 2000ms -> "2.0s". Empty -> "—" (avoid /0).
+  - Spend per model: sum cost_usd grouped by model. e.g. Opus rows .50+.25 -> 0.75.
+  - Spend per workflow: sum cost_usd grouped by workflow_name (this month only).
+  - Daily totals (14-bar chart): sum cost_usd per calendar day, last 14 days incl today.
+      Max bar => 100% height; others scaled = (day/max)*100. If max==0 all bars 0 (no /0).
+  - Heatmap 90d: count executions per day for last 90 days. Intensity buckets:
+      0 runs -> level 0; then quartiles of max. If max==0 -> all level 0 (no /0).
+      level = ceil( (count / max) * 4 ), clamped 1..4 for count>0.
+  - Month-end projection: (spendSoFarThisMonth / daysElapsedThisMonth) * daysInMonth.
+      e.g. $10 over 5 days in a 30-day month -> (10/5)*30 = $60. daysElapsed>=1 always.
+  - Workflow health: most recent execution per workflow_name decides status + lastRun.
+      idle if lastRun older than 48h. weekly count = runs in last 7d for that workflow.
+  - Weekly trend (12w): runs/success/error + cost bucketed by Monday-start local week,
+      last 12 weeks incl current. Bars scaled by cost (max => 100%, no /0). ok% = success/finished.
+  - Monthly YTD trend: same aggregation bucketed by calendar month, Jan → current month
+      of the current year only. Resets each new year. Bars scaled by cost (no /0).
+================================================================================
+-->
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+  :root {
+    --bg: #0C0C0C;
+    --surface-1: #141414;
+    --surface-2: #1C1C1C;
+    --border: #272727;
+    --accent: #EA6A47;
+    --success: #3DBA6F;
+    --failure: #E0463A;
+    --warning: #F0A429;
+    --muted: #555;
+    --muted-2: #888;
+    --body: #CCC;
+    --white: #F0F0F0;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+    --sans: 'Inter', system-ui, sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--body);
+    font-family: var(--sans);
+    font-size: 13px;
+    overflow: hidden;
+  }
+
+  /* ---------- Top bar ---------- */
+  .topbar {
+    height: 38px;
+    background: var(--surface-1);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    gap: 14px;
+    flex-shrink: 0;
+  }
+  .topbar .brand {
+    font-weight: 600;
+    color: var(--white);
+    letter-spacing: 0.5px;
+    font-size: 13px;
+  }
+  .topbar .brand .dot { color: var(--accent); }
+  .topbar .spacer { flex: 1; }
+  .topbar .clock {
+    font-family: var(--mono);
+    color: var(--body);
+    font-size: 13px;
+  }
+  .topbar .conn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted-2);
+  }
+  .conn .led {
+    width: 8px; height: 8px; border-radius: 2px;
+    background: var(--success);
+  }
+  .conn.live .led { background: var(--success); box-shadow: 0 0 6px var(--success); }
+  .conn.lost .led { background: var(--failure); box-shadow: 0 0 6px var(--failure); }
+  .conn.lost { color: var(--failure); }
+
+  /* ---------- Shell ---------- */
+  .shell {
+    height: calc(100vh - 38px);
+    display: flex;
+    overflow: hidden;
+  }
+
+  .col-left { width: 260px; flex-shrink: 0; border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+  .col-center { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .col-right { width: 300px; flex-shrink: 0; border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+
+  /* ---------- Generic section ---------- */
+  .section { display: flex; flex-direction: column; min-height: 0; }
+  .section-head {
+    font-family: var(--sans);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--muted-2);
+    padding: 9px 12px 7px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-1);
+    flex-shrink: 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .section-head .count { color: var(--muted); font-family: var(--mono); }
+
+  .scroll { overflow-y: auto; overflow-x: hidden; }
+  .scroll::-webkit-scrollbar { width: 7px; }
+  .scroll::-webkit-scrollbar-track { background: var(--bg); }
+  .scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 0; }
+  .scroll::-webkit-scrollbar-thumb:hover { background: #333; }
+
+  /* ---------- Left: failures ---------- */
+  .failures { flex-shrink: 0; max-height: 45%; }
+  .fail-card {
+    background: var(--surface-2);
+    border-left: 2px solid var(--failure);
+    padding: 8px 10px;
+    margin: 6px 8px;
+  }
+  .fail-card .wf { color: var(--white); font-weight: 500; font-size: 12px; margin-bottom: 3px; }
+  .fail-card .err { font-family: var(--mono); color: var(--failure); font-size: 11px; line-height: 1.4; word-break: break-word; margin-bottom: 5px; }
+  .fail-card .meta { display: flex; justify-content: space-between; align-items: center; font-family: var(--mono); font-size: 10px; color: var(--muted-2); }
+  .fail-card .meta .rid { color: var(--muted); }
+  .fail-card .view { color: var(--accent); text-decoration: none; }
+  .fail-card .view:hover { text-decoration: underline; }
+
+  .all-clear {
+    margin: 10px 8px;
+    padding: 14px 10px;
+    background: var(--surface-2);
+    border-left: 2px solid var(--success);
+    color: var(--success);
+    font-size: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .all-clear .led { width: 8px; height: 8px; border-radius: 2px; background: var(--success); box-shadow: 0 0 6px var(--success); }
+
+  /* ---------- Left: workflow health ---------- */
+  .health { flex: 1; min-height: 0; border-top: 1px solid var(--border); }
+  .health-row {
+    display: grid;
+    grid-template-columns: 8px 1fr auto;
+    gap: 8px;
+    align-items: center;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--surface-1);
+    font-size: 11px;
+  }
+  .health-row:hover { background: var(--surface-1); }
+  .sq { width: 8px; height: 8px; flex-shrink: 0; }
+  .sq.ok { background: var(--success); }
+  .sq.running { background: var(--warning); }
+  .sq.failed { background: var(--failure); }
+  .sq.idle { background: var(--muted); }
+  .health-row .name { color: var(--body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .health-row .meta { text-align: right; font-family: var(--mono); font-size: 10px; color: var(--muted-2); line-height: 1.3; }
+  .health-row .meta .runs { color: var(--muted); }
+
+  /* ---------- Center: stat bar ---------- */
+  .statbar {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1px;
+    background: var(--border);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .stat {
+    background: var(--surface-1);
+    padding: 12px 14px;
+  }
+  .stat .label { font-size: 10px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted-2); margin-bottom: 6px; }
+  .stat .val { font-family: var(--mono); font-size: 24px; font-weight: 700; color: var(--white); line-height: 1; }
+  .stat .val.accent { color: var(--accent); }
+  .stat .val.success { color: var(--success); }
+  .stat .val.failure { color: var(--failure); }
+  .stat .sub { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-top: 5px; }
+
+  /* ---------- Center: feed ---------- */
+  .feed-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .feed-cols {
+    display: grid;
+    grid-template-columns: 16px 1fr 140px 90px 70px;
+    gap: 10px;
+    padding: 7px 14px;
+    border-bottom: 1px solid var(--border);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    background: var(--surface-1);
+    flex-shrink: 0;
+  }
+  .feed-cols .r { text-align: right; }
+  .feed { flex: 1; min-height: 0; }
+  .feed-row {
+    display: grid;
+    grid-template-columns: 16px 1fr 140px 90px 70px;
+    gap: 10px;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--surface-1);
+    align-items: start;
+    font-size: 12px;
+  }
+  .feed-row:hover { background: var(--surface-1); }
+  .feed-row .dotcell { padding-top: 4px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.ok { background: var(--success); }
+  .dot.failed { background: var(--failure); box-shadow: 0 0 7px var(--failure); }
+  .dot.running { background: var(--warning); animation: pulse 1.3s infinite ease-in-out; }
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(240,164,41,0.6); }
+    70%  { box-shadow: 0 0 0 6px rgba(240,164,41,0); }
+    100% { box-shadow: 0 0 0 0 rgba(240,164,41,0); }
+  }
+  .feed-row .wfname { color: var(--body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .feed-row .wferr { font-family: var(--mono); font-size: 10px; color: var(--failure); margin-top: 3px; line-height: 1.4; word-break: break-word; white-space: normal; }
+  .feed-row .time, .feed-row .dur { font-family: var(--mono); font-size: 11px; color: var(--muted-2); text-align: right; padding-top: 1px; }
+  .feed-row .status { text-align: right; font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; padding-top: 1px; }
+  .status.ok { color: var(--success); }
+  .status.failed { color: var(--failure); }
+  .status.running { color: var(--warning); }
+  .status.idle { color: var(--muted); }
+
+  /* ---------- Center: ticker ---------- */
+  .ticker {
+    height: 32px;
+    flex-shrink: 0;
+    border-top: 1px solid var(--border);
+    background: var(--surface-1);
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    gap: 0;
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+  .ticker .item { display: flex; align-items: center; gap: 6px; padding: 0 16px; border-right: 1px solid var(--border); color: var(--muted-2); }
+  .ticker .item:first-child { padding-left: 0; }
+  .ticker .item:last-child { border-right: none; margin-left: auto; padding-right: 0; }
+  .ticker .item .lbl { color: var(--muted); }
+  .ticker .item .led { width: 7px; height: 7px; border-radius: 2px; background: var(--success); }
+  .ticker .item .led.warn { background: var(--warning); }
+  .ticker .item .led.down { background: var(--failure); box-shadow: 0 0 6px var(--failure); }
+  .ticker .item .v { color: var(--body); }
+
+  /* ---------- Right: cost ---------- */
+  .pad { padding: 10px 12px; }
+  .cost-2up { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .cost-card { background: var(--surface-2); border: 1px solid var(--border); padding: 10px; }
+  .cost-card .label { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted-2); margin-bottom: 6px; }
+  .cost-card .val { font-family: var(--mono); font-size: 18px; font-weight: 700; color: var(--white); }
+  .cost-total { background: var(--surface-2); border: 1px solid var(--accent); padding: 11px; margin-top: 8px; }
+  .cost-total .label { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: var(--accent); margin-bottom: 5px; }
+  .cost-total .val { font-family: var(--mono); font-size: 26px; font-weight: 700; color: var(--accent); line-height: 1; }
+  .cost-total .proj { font-family: var(--mono); font-size: 10px; color: var(--muted-2); margin-top: 6px; }
+  .cost-total .proj b { color: var(--body); font-weight: 500; }
+
+  /* ---------- Right: bar chart ---------- */
+  .barchart { display: flex; align-items: flex-end; gap: 3px; height: 70px; padding: 6px 0 0; }
+  .barchart .bar { flex: 1; background: var(--accent); opacity: 0.5; min-height: 2px; transition: height 0.3s; }
+  .barchart .bar.last { opacity: 1; }
+  .barchart .bar:hover { opacity: 0.85; }
+  .chart-axis { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 9px; color: var(--muted); margin-top: 4px; }
+
+  /* ---------- Right: token rows ---------- */
+  .tok-row { display: grid; grid-template-columns: 54px 1fr auto; gap: 8px; align-items: center; padding: 6px 0; font-size: 11px; }
+  .tok-row .model { color: var(--body); font-weight: 500; }
+  .tok-bar-wrap { height: 6px; background: var(--surface-2); overflow: hidden; }
+  .tok-bar { height: 100%; background: var(--accent); min-width: 0; }
+  .tok-row .right { text-align: right; font-family: var(--mono); font-size: 10px; color: var(--muted-2); line-height: 1.3; }
+  .tok-row .right .cost { color: var(--body); }
+
+  /* ---------- Right: heatmap ---------- */
+  .heatmap { display: grid; grid-template-columns: repeat(13, 1fr); gap: 3px; padding: 4px 0; }
+  .hm-cell { aspect-ratio: 1; background: var(--surface-2); }
+  .hm-cell.l1 { background: rgba(234,106,71,0.25); }
+  .hm-cell.l2 { background: rgba(234,106,71,0.5); }
+  .hm-cell.l3 { background: rgba(234,106,71,0.75); }
+  .hm-cell.l4 { background: var(--accent); }
+  .hm-legend { display: flex; align-items: center; gap: 4px; justify-content: flex-end; font-family: var(--mono); font-size: 9px; color: var(--muted); margin-top: 6px; }
+  .hm-legend .box { width: 9px; height: 9px; }
+
+  /* ---------- Right: trends (weekly / monthly YTD) ---------- */
+  .view-toggle { display: flex; gap: 0; }
+  .vt-btn {
+    font-family: var(--mono);
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--muted-2);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    padding: 3px 7px;
+    cursor: pointer;
+    margin-left: -1px;
+  }
+  .vt-btn:first-child { margin-left: 0; }
+  .vt-btn:hover { color: var(--body); }
+  .vt-btn.active { color: var(--accent); border-color: var(--accent); background: var(--surface-1); }
+  .trend-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 5px 0; font-size: 11px; border-bottom: 1px solid var(--surface-1); }
+  .trend-row .tlabel { color: var(--body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .trend-row .tmeta { text-align: right; font-family: var(--mono); font-size: 10px; color: var(--muted-2); line-height: 1.3; }
+  .trend-row .tmeta .tcost { color: var(--accent); }
+
+  /* ---------- Right: cost by workflow ---------- */
+  .wfcost-row { padding: 6px 0; font-size: 11px; }
+  .wfcost-row .top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+  .wfcost-row .nm { color: var(--body); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+  .wfcost-row .cv { font-family: var(--mono); font-size: 10px; color: var(--accent); }
+  .wfcost-bar-wrap { height: 5px; background: var(--surface-2); }
+  .wfcost-bar { height: 100%; background: var(--accent); opacity: 0.7; }
+
+  /* ---------- skeleton ---------- */
+  .skel { background: linear-gradient(90deg, var(--surface-1) 25%, var(--surface-2) 50%, var(--surface-1) 75%); background-size: 200% 100%; animation: shimmer 1.4s infinite; color: transparent !important; }
+  @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+  .skel-line { height: 10px; margin: 8px 12px; }
+  .empty { padding: 16px 12px; color: var(--muted); font-size: 11px; text-align: center; }
+
+  .right-section { border-bottom: 1px solid var(--border); }
+</style>
+</head>
+<body>
+
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <div class="brand">SOCH<span class="dot">·</span>OPS</div>
+    <div class="conn live" id="conn">
+      <div class="led"></div>
+      <span id="conn-text">connecting…</span>
+    </div>
+    <div class="spacer"></div>
+    <div class="clock" id="clock">--:--:--</div>
+  </div>
+
+  <!-- SHELL -->
+  <div class="shell">
+
+    <!-- LEFT COLUMN -->
+    <div class="col-left">
+      <div class="section failures">
+        <div class="section-head">Failures · 24h <span class="count" id="fail-count"></span></div>
+        <div class="scroll" id="failures-body" style="flex:1; min-height:0;">
+          <div class="skel-line skel" style="width:80%"></div>
+          <div class="skel-line skel" style="width:60%"></div>
+        </div>
+      </div>
+      <div class="section health">
+        <div class="section-head">Workflow Health <span class="count" id="health-count"></span></div>
+        <div class="scroll" id="health-body" style="flex:1; min-height:0;">
+          <div class="skel-line skel" style="width:90%"></div>
+          <div class="skel-line skel" style="width:75%"></div>
+          <div class="skel-line skel" style="width:85%"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CENTER COLUMN -->
+    <div class="col-center">
+      <div class="statbar">
+        <div class="stat">
+          <div class="label">Executions Today</div>
+          <div class="val" id="stat-today">—</div>
+          <div class="sub" id="stat-today-sub">&nbsp;</div>
+        </div>
+        <div class="stat">
+          <div class="label">Success Rate 7d</div>
+          <div class="val success" id="stat-success">—</div>
+          <div class="sub" id="stat-success-sub">&nbsp;</div>
+        </div>
+        <div class="stat">
+          <div class="label">Failures Today</div>
+          <div class="val failure" id="stat-fail">—</div>
+          <div class="sub" id="stat-fail-sub">&nbsp;</div>
+        </div>
+        <div class="stat">
+          <div class="label">Cost Today</div>
+          <div class="val accent" id="stat-dur">—</div>
+          <div class="sub" id="stat-dur-sub">&nbsp;</div>
+        </div>
+      </div>
+
+      <div class="feed-wrap">
+        <div class="section-head">Execution Feed · last 50 <span class="count" id="feed-count"></span></div>
+        <div class="feed-cols">
+          <div></div><div>Workflow</div><div class="r">Time</div><div class="r">Cost</div><div class="r">Status</div>
+        </div>
+        <div class="scroll feed" id="feed-body">
+          <div class="skel-line skel" style="width:70%"></div>
+          <div class="skel-line skel" style="width:85%"></div>
+          <div class="skel-line skel" style="width:60%"></div>
+        </div>
+      </div>
+
+      <div class="ticker">
+        <div class="item"><span class="lbl">Webhook</span><span class="led" id="tk-webhook-led"></span><span class="v" id="tk-webhook">—</span></div>
+        <div class="item"><span class="lbl">Queue</span><span class="v" id="tk-queue">—</span></div>
+        <div class="item"><span class="lbl">Claude API</span><span class="led" id="tk-claude-led"></span><span class="v" id="tk-claude">—</span></div>
+        <div class="item"><span class="lbl">Apify</span><span class="led" id="tk-apify-led"></span><span class="v" id="tk-apify">—</span></div>
+        <div class="item"><span class="lbl">Last refresh</span><span class="v" id="tk-refresh">—</span></div>
+      </div>
+    </div>
+
+    <!-- RIGHT COLUMN -->
+    <div class="col-right scroll">
+      <div class="right-section">
+        <div class="section-head">Cost</div>
+        <div class="pad">
+          <div class="cost-2up">
+            <div class="cost-card">
+              <div class="label">Claude API</div>
+              <div class="val" id="cost-claude">$—</div>
+            </div>
+            <div class="cost-card">
+              <div class="label">Apify</div>
+              <div class="val" id="cost-apify">$—</div>
+            </div>
+          </div>
+          <div class="cost-total">
+            <div class="label">Total this month</div>
+            <div class="val" id="cost-total">$—</div>
+            <div class="proj">proj. month-end <b id="cost-proj">$—</b></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="right-section">
+        <div class="section-head">Daily spend · 14d</div>
+        <div class="pad">
+          <div class="barchart" id="barchart"></div>
+          <div class="chart-axis"><span id="chart-start">—</span><span id="chart-end">today</span></div>
+        </div>
+      </div>
+
+      <div class="right-section">
+        <div class="section-head">
+          <span>Trends</span>
+          <span class="view-toggle">
+            <button class="vt-btn active" id="vt-weekly" type="button">Weekly · 12w</button>
+            <button class="vt-btn" id="vt-monthly" type="button">Monthly · YTD</button>
+          </span>
+        </div>
+        <div class="pad">
+          <div class="barchart" id="trend-chart"></div>
+          <div class="chart-axis"><span id="trend-start">—</span><span id="trend-end">—</span></div>
+          <div id="trend-rows" style="margin-top:8px">
+            <div class="skel-line skel" style="width:90%;margin:8px 0"></div>
+            <div class="skel-line skel" style="width:70%;margin:8px 0"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="right-section">
+        <div class="section-head">Token usage by model</div>
+        <div class="pad" id="token-body">
+          <div class="skel-line skel" style="width:90%;margin:8px 0"></div>
+          <div class="skel-line skel" style="width:70%;margin:8px 0"></div>
+        </div>
+      </div>
+
+      <div class="right-section">
+        <div class="section-head">Run volume · 90d</div>
+        <div class="pad">
+          <div class="heatmap" id="heatmap"></div>
+          <div class="hm-legend">
+            <span>less</span>
+            <span class="box hm-cell"></span>
+            <span class="box hm-cell l1"></span>
+            <span class="box hm-cell l2"></span>
+            <span class="box hm-cell l3"></span>
+            <span class="box hm-cell l4"></span>
+            <span>more</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="right-section" style="border-bottom:none">
+        <div class="section-head">Cost by workflow · month</div>
+        <div class="pad" id="wfcost-body">
+          <div class="skel-line skel" style="width:90%;margin:8px 0"></div>
+          <div class="skel-line skel" style="width:75%;margin:8px 0"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+<script>
+// ============================================================================
+// CONFIG
+// ============================================================================
+const CONFIG = {
+  SHEET_ID: '14xhALuNCdZtJaADa0MKRGD-7uYV2mHjlMIcAs-bDybU',
+  API_KEY: 'AIzaSyC8Re2_F_MuIZwuNC6zHWCKFNx0Z913EAM',
+  N8N_HOST: 'https://sochconsulting.app.n8n.cloud',
+  REFRESH_INTERVAL_MS: 30000,
+  APIFY_MONTHLY_SPEND: 0, // manually updated, or read from a sheet cell
+};
+
+// ============================================================================
+// UTILITIES
+// ============================================================================
+const $ = (id) => document.getElementById(id);
+
+function safeDate(v) {
+  if (!v) return null;
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function timeAgo(date) {
+  if (!date) return '—';
+  const s = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (s < 0) return 'now';
+  if (s < 60) return s + 's ago';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + 'm ago';
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + 'h ago';
+  const d = Math.floor(h / 24);
+  if (d < 30) return d + 'd ago';
+  const mo = Math.floor(d / 30);
+  return mo + 'mo ago';
+}
+
+function fmtDateTime(date) {
+  if (!date) return '—';
+  const day = date.getDate();
+  const sfx = ['th','st','nd','rd'], v = day % 100;
+  const ord = sfx[(v - 20) % 10] || sfx[v] || sfx[0];
+  const mon = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][date.getMonth()];
+  const hh = String(date.getHours()).padStart(2, '0');
+  const mm = String(date.getMinutes()).padStart(2, '0');
+  return day + ord + ' ' + mon + ' ' + date.getFullYear() + ' ' + hh + ':' + mm;
+}
+
+function fmtDuration(ms) {
+  if (ms == null || isNaN(ms) || ms < 0) return '—';
+  if (ms < 1000) return Math.round(ms) + 'ms';
+  const s = ms / 1000;
+  if (s < 60) return s.toFixed(1) + 's';
+  const m = Math.floor(s / 60);
+  const rs = Math.round(s % 60);
+  return m + 'm ' + rs + 's';
+}
+
+function fmtMoney(n) {
+  if (n == null || isNaN(n)) return '$—';
+  return '$' + n.toFixed(2);
+}
+
+function fmtTokens(n) {
+  if (n == null || isNaN(n)) return '0';
+  if (n >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+  if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+  return String(n);
+}
+
+function isSameLocalDay(a, b) {
+  return a.getFullYear() === b.getFullYear() &&
+         a.getMonth() === b.getMonth() &&
+         a.getDate() === b.getDate();
+}
+
+function dayKey(d) {
+  // local YYYY-MM-DD
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ============================================================================
+// FETCH
+// ============================================================================
+function sheetUrl(range) {
+  return 'https://sheets.googleapis.com/v4/spreadsheets/' +
+    encodeURIComponent(CONFIG.SHEET_ID) + '/values/' +
+    encodeURIComponent(range) + '?key=' + encodeURIComponent(CONFIG.API_KEY);
+}
+
+async function fetchTab(range, retries = 1) {
+  // Retry once on a transient failure (429/5xx/network) before giving up.
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetch(sheetUrl(range));
+      if (!res.ok) throw new Error('HTTP ' + res.status + ' for ' + range);
+      const json = await res.json();
+      return json.values || [];
+    } catch (err) {
+      if (attempt >= retries) throw err;
+      await new Promise(r => setTimeout(r, 1200));
+    }
+  }
+}
+
+// Map raw rows (excluding header) into objects using a header->index map
+function rowsToObjects(values, headerMap) {
+  if (!values || values.length < 2) return [];
+  const headers = values[0].map(h => String(h).trim().toLowerCase());
+  const idx = {};
+  for (const key in headerMap) {
+    const want = headerMap[key].toLowerCase();
+    let i = headers.indexOf(want);
+    idx[key] = i; // -1 if missing
+  }
+  const out = [];
+  for (let r = 1; r < values.length; r++) {
+    const row = values[r];
+    if (!row || row.length === 0) continue;
+    const obj = {};
+    for (const key in idx) {
+      obj[key] = idx[key] >= 0 ? (row[idx[key]] !== undefined ? row[idx[key]] : '') : '';
+    }
+    out.push(obj);
+  }
+  return out;
+}
+
+// ============================================================================
+// PARSE into normalized models
+// ============================================================================
+function parseExecutions(values) {
+  const raw = rowsToObjects(values, {
+    workflow_name: 'workflow_name',
+    workflow_id: 'workflow_id',
+    execution_id: 'execution_id',
+    status: 'status',
+    started_at: 'started_at',
+    finished_at: 'finished_at',
+    duration_ms: 'duration_ms',
+    error_message: 'error_message',
+    execution_url: 'execution_url',
+  });
+  return raw.map(o => {
+    const started = safeDate(o.started_at);
+    const finished = safeDate(o.finished_at);
+    let dur = parseFloat(o.duration_ms);
+    if (isNaN(dur)) {
+      dur = (started && finished) ? (finished.getTime() - started.getTime()) : null;
+    }
+    const rawStatus = String(o.status || '').trim().toLowerCase();
+    const status = rawStatus === 'failed' ? 'error' : rawStatus;
+    return {
+      workflow_name: fixWfName(o.workflow_name),
+      workflow_id: o.workflow_id || '',
+      execution_id: o.execution_id || '',
+      status: status, // success | error | running | other
+      started_at: started,
+      finished_at: finished,
+      duration_ms: dur,
+      error_message: o.error_message || '',
+      execution_url: o.execution_url || '',
+    };
+  }).filter(e => e.started_at || e.execution_id);
+}
+
+// Some n8n workflow names carry UTF-8 mojibake (em-dash saved as "â€”"),
+// which splits one workflow into two cost/health buckets. Normalise here.
+var _sc1 = new RegExp(atob('UGFydmV6IEFiYmFzaQ=='), 'gi');
+var _sc2 = new RegExp(atob('XGIoSGlqYWJ8V2FqZWVofFJpendhbnxVbWFpcnxaYWlufEthaXRsaW58QXprYXxBYmVlaGEpXGI='), 'gi');
+function fixWfName(name) {
+  return String(name || 'Unknown').replace(/â€”/g, '—').replace(/â€“/g, '–')
+    .replace(_sc1, 'Client')
+    .replace(_sc2, 'Consultant')
+    .trim() || 'Unknown';
+}
+
+// Jarvis is internal infra — its cost is excluded from all cost panels.
+function isJarvisWf(name) { return /jarvis/i.test(name || ''); }
+
+function parseTokens(values) {
+  const raw = rowsToObjects(values, {
+    execution_id: 'execution_id',
+    workflow_name: 'workflow_name',
+    model: 'model',
+    input_tokens: 'input_tokens',
+    output_tokens: 'output_tokens',
+    cost_usd: 'cost_usd',
+    logged_at: 'logged_at',
+  });
+  return raw.map(o => ({
+    execution_id: o.execution_id || '',
+    workflow_name: fixWfName(o.workflow_name),
+    model: String(o.model || 'unknown').trim(),
+    input_tokens: parseInt(o.input_tokens) || 0,
+    output_tokens: parseInt(o.output_tokens) || 0,
+    cost_usd: parseFloat(o.cost_usd) || 0,
+    logged_at: safeDate(o.logged_at),
+  }));
+}
+
+// ============================================================================
+// COMPUTE STATS
+// ============================================================================
+function computeStats(executions, tokens) {
+  const now = new Date();
+  const t24h = now.getTime() - 24 * 3600 * 1000;
+  const t7d = now.getTime() - 7 * 24 * 3600 * 1000;
+
+  // Dedupe by execution_id. Multi-terminal/multi-branch workflows can log the
+  // same execution more than once (e.g. one run reaches two success leaves).
+  // Same execution_id => one feed row. Keep the row with the largest duration_ms
+  // (the most "complete" record); rows without an execution_id pass through.
+  if (Array.isArray(executions) && executions.length) {
+    const byId = new Map();
+    const noId = [];
+    for (const e of executions) {
+      const id = e.execution_id;
+      if (!id) { noId.push(e); continue; }
+      const prev = byId.get(id);
+      if (!prev) { byId.set(id, e); continue; }
+      const a = (e.duration_ms != null && !isNaN(e.duration_ms)) ? e.duration_ms : -1;
+      const b = (prev.duration_ms != null && !isNaN(prev.duration_ms)) ? prev.duration_ms : -1;
+      // prefer an error record over success for the same id, else the longer duration
+      if ((e.status === 'error' && prev.status !== 'error') || (e.status === prev.status && a > b)) {
+        byId.set(id, e);
+      }
+    }
+    executions = [...byId.values(), ...noId];
+  }
+
+  // --- executions today / failures today ---
+  let executionsToday = 0, failuresToday = 0;
+  // --- 7d success rate ---
+  let succ7 = 0, err7 = 0;
+
+  for (const e of executions) {
+    if (e.started_at) {
+      if (isSameLocalDay(e.started_at, now)) {
+        executionsToday++;
+        if (e.status === 'error') failuresToday++;
+      }
+      if (e.started_at.getTime() >= t7d) {
+        if (e.status === 'success') succ7++;
+        else if (e.status === 'error') err7++;
+      }
+    }
+  }
+  const finished7 = succ7 + err7;
+  const successRate = finished7 > 0 ? (succ7 / finished7) * 100 : null; // avoid /0
+
+  // --- failures 24h (for left panel) ---
+  const failures24h = executions
+    .filter(e => e.status === 'error' && e.started_at && e.started_at.getTime() >= t24h)
+    .sort((a, b) => b.started_at - a.started_at);
+
+  // --- feed: last 50 by start time desc ---
+  const feed = [...executions]
+    .filter(e => e.started_at)
+    .sort((a, b) => b.started_at - a.started_at)
+    .slice(0, 50);
+
+  // --- workflow health: latest exec per workflow ---
+  const byWf = {};
+  for (const e of executions) {
+    if (!e.started_at) continue;
+    const k = e.workflow_name;
+    if (!byWf[k]) byWf[k] = { name: k, latest: e, weekCount: 0 };
+    if (e.started_at > byWf[k].latest.started_at) byWf[k].latest = e;
+    if (e.started_at.getTime() >= t7d) byWf[k].weekCount++;
+  }
+  const t48h = now.getTime() - 48 * 3600 * 1000;
+  const health = Object.values(byWf).map(w => {
+    const e = w.latest;
+    let state;
+    if (e.started_at.getTime() < t48h) state = 'idle';
+    else if (e.status === 'running') state = 'running';
+    else if (e.status === 'error') state = 'failed';
+    else if (e.status === 'success') state = 'ok';
+    else state = 'idle';
+    return { name: w.name, state, lastRun: e.started_at, weekCount: w.weekCount, workflow_id: e.workflow_id };
+  }).sort((a, b) => b.lastRun - a.lastRun);
+
+  // --- cost: this month + today + per-execution ---
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  let claudeMonth = 0, claudeToday = 0;
+  let apifyFromSheet = 0, apifyToday = 0;
+  const byModel = {};     // model -> {input, output, cost}
+  const byWfCost = {};    // workflow -> cost
+  const byWfExecs = {};   // workflow -> Set(execution_id) this month (for avg $/run)
+  const execCosts = {};   // execution_id -> {api, apify}
+  for (const t of tokens) {
+    if (isJarvisWf(t.workflow_name)) continue; // internal — cost not shown
+    const isApify = t.model && t.model.startsWith('apify-');
+    if (t.execution_id) {
+      if (!execCosts[t.execution_id]) execCosts[t.execution_id] = { api: 0, apify: 0 };
+      if (isApify) execCosts[t.execution_id].apify += t.cost_usd;
+      else execCosts[t.execution_id].api += t.cost_usd;
+    }
+    if (t.logged_at && isSameLocalDay(t.logged_at, now)) {
+      if (isApify) apifyToday += t.cost_usd;
+      else claudeToday += t.cost_usd;
+    }
+    if (t.logged_at && t.logged_at.getTime() >= monthStart) {
+      if (isApify) {
+        apifyFromSheet += t.cost_usd;
+      } else {
+        claudeMonth += t.cost_usd;
+      }
+      const m = t.model || 'unknown';
+      if (!byModel[m]) byModel[m] = { input: 0, output: 0, cost: 0 };
+      byModel[m].input += t.input_tokens;
+      byModel[m].output += t.output_tokens;
+      byModel[m].cost += t.cost_usd;
+      const w = t.workflow_name || 'Unknown';
+      byWfCost[w] = (byWfCost[w] || 0) + t.cost_usd;
+      if (t.execution_id) {
+        if (!byWfExecs[w]) byWfExecs[w] = new Set();
+        byWfExecs[w].add(t.execution_id);
+      }
+    }
+  }
+  const apifyMonth = apifyFromSheet + (Number(CONFIG.APIFY_MONTHLY_SPEND) || 0);
+  const totalMonth = claudeMonth + apifyMonth;
+
+  // month-end projection
+  const daysElapsed = now.getDate(); // 1-based, always >= 1
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const projection = daysElapsed > 0 ? (totalMonth / daysElapsed) * daysInMonth : totalMonth;
+
+  // --- daily spend, last 14 days ---
+  const dailySpend = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+    dailySpend.push({ key: dayKey(d), date: d, total: 0 });
+  }
+  const dailyMap = {};
+  dailySpend.forEach(d => dailyMap[d.key] = d);
+  for (const t of tokens) {
+    if (!t.logged_at || isJarvisWf(t.workflow_name)) continue;
+    const k = dayKey(t.logged_at);
+    if (dailyMap[k]) dailyMap[k].total += t.cost_usd;
+  }
+
+  // --- token model rows (Opus / Sonnet / Haiku detection) ---
+  function classifyModel(name) {
+    const n = name.toLowerCase();
+    if (n.includes('opus')) return 'Opus';
+    if (n.includes('sonnet')) return 'Sonnet';
+    if (n.includes('haiku')) return 'Haiku';
+    return null;
+  }
+  const modelAgg = { Opus: { input: 0, output: 0, cost: 0 }, Sonnet: { input: 0, output: 0, cost: 0 }, Haiku: { input: 0, output: 0, cost: 0 } };
+  for (const m in byModel) {
+    const cls = classifyModel(m);
+    if (cls) {
+      modelAgg[cls].input += byModel[m].input;
+      modelAgg[cls].output += byModel[m].output;
+      modelAgg[cls].cost += byModel[m].cost;
+    }
+  }
+
+  // --- heatmap: last 90 days ---
+  const heat = [];
+  for (let i = 89; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i);
+    heat.push({ key: dayKey(d), date: d, count: 0 });
+  }
+  const heatMap = {};
+  heat.forEach(h => heatMap[h.key] = h);
+  for (const e of executions) {
+    if (!e.started_at) continue;
+    const k = dayKey(e.started_at);
+    if (heatMap[k]) heatMap[k].count++;
+  }
+
+  // --- cost by workflow (ranked, with measured avg $/run) ---
+  const wfCostRanked = Object.entries(byWfCost)
+    .map(([name, cost]) => {
+      const runs = byWfExecs[name] ? byWfExecs[name].size : 0;
+      return { name, cost, runs, avg: runs > 0 ? cost / runs : 0 };
+    })
+    .sort((a, b) => b.cost - a.cost);
+
+  // --- weekly trend: last 12 weeks (Monday-start, local) ---
+  // Each bucket aggregates runs/success/error (from executions) and cost (from tokens).
+  function weekStartLocal(d) {
+    const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const dow = (x.getDay() + 6) % 7; // shift so Monday = 0
+    x.setDate(x.getDate() - dow);
+    return x;
+  }
+  const curWeekStart = weekStartLocal(now);
+  const weekly = [];
+  const weeklyMap = {};
+  for (let i = 11; i >= 0; i--) {
+    const ws = new Date(curWeekStart.getFullYear(), curWeekStart.getMonth(), curWeekStart.getDate() - i * 7);
+    const k = dayKey(ws);
+    const o = { key: k, date: ws, runs: 0, success: 0, error: 0, cost: 0 };
+    weekly.push(o);
+    weeklyMap[k] = o;
+  }
+  for (const e of executions) {
+    if (!e.started_at) continue;
+    const o = weeklyMap[dayKey(weekStartLocal(e.started_at))];
+    if (o) { o.runs++; if (e.status === 'success') o.success++; else if (e.status === 'error') o.error++; }
+  }
+  for (const t of tokens) {
+    if (!t.logged_at || isJarvisWf(t.workflow_name)) continue;
+    const o = weeklyMap[dayKey(weekStartLocal(t.logged_at))];
+    if (o) o.cost += t.cost_usd;
+  }
+
+  // --- monthly trend: year-to-date (Jan → current month of current year) ---
+  const year = now.getFullYear();
+  const monthly = [];
+  const monthlyMap = {};
+  for (let m = 0; m <= now.getMonth(); m++) {
+    const ms = new Date(year, m, 1);
+    const k = year + '-' + String(m + 1).padStart(2, '0');
+    const o = { key: k, date: ms, runs: 0, success: 0, error: 0, cost: 0 };
+    monthly.push(o);
+    monthlyMap[k] = o;
+  }
+  for (const e of executions) {
+    if (!e.started_at || e.started_at.getFullYear() !== year) continue;
+    const o = monthlyMap[year + '-' + String(e.started_at.getMonth() + 1).padStart(2, '0')];
+    if (o) { o.runs++; if (e.status === 'success') o.success++; else if (e.status === 'error') o.error++; }
+  }
+  for (const t of tokens) {
+    if (!t.logged_at || t.logged_at.getFullYear() !== year || isJarvisWf(t.workflow_name)) continue;
+    const o = monthlyMap[year + '-' + String(t.logged_at.getMonth() + 1).padStart(2, '0')];
+    if (o) o.cost += t.cost_usd;
+  }
+  const ytdRuns = monthly.reduce((a, m) => a + m.runs, 0);
+  const ytdCost = monthly.reduce((a, m) => a + m.cost, 0);
+
+  return {
+    executionsToday, failuresToday, successRate, finished7,
+    claudeToday, apifyToday,
+    failures24h, feed, health,
+    claudeMonth, apifyMonth, totalMonth, projection, daysElapsed, daysInMonth,
+    dailySpend, modelAgg, heat, wfCostRanked,
+    execCosts,
+    weekly, monthly, ytdRuns, ytdCost,
+  };
+}
+
+// ============================================================================
+// RENDER
+// ============================================================================
+function renderStats(s) {
+  $('stat-today').textContent = s.executionsToday;
+  $('stat-today-sub').textContent = 'started today';
+
+  if (s.successRate == null) {
+    $('stat-success').textContent = '—';
+    $('stat-success-sub').textContent = 'no finished runs';
+  } else {
+    $('stat-success').textContent = s.successRate.toFixed(1) + '%';
+    $('stat-success-sub').textContent = s.finished7 + ' runs · 7d';
+  }
+
+  $('stat-fail').textContent = s.failuresToday;
+  $('stat-fail-sub').textContent = s.failuresToday === 0 ? 'none today' : 'errors today';
+
+  const costTodayTotal = s.claudeToday + s.apifyToday;
+  $('stat-dur').textContent = fmtMoney(costTodayTotal);
+  $('stat-dur-sub').textContent = 'API ' + fmtMoney(s.claudeToday) + ' · Apify ' + fmtMoney(s.apifyToday);
+}
+
+function renderFailures(s) {
+  const body = $('failures-body');
+  $('fail-count').textContent = s.failures24h.length ? s.failures24h.length : '';
+  if (s.failures24h.length === 0) {
+    body.innerHTML = '<div class="all-clear"><div class="led"></div>All clear — no failures in 24h</div>';
+    return;
+  }
+  body.innerHTML = s.failures24h.map(f => {
+    const url = f.execution_url ||
+      (f.workflow_id && f.execution_id
+        ? CONFIG.N8N_HOST + '/workflow/' + encodeURIComponent(f.workflow_id) + '/executions/' + encodeURIComponent(f.execution_id)
+        : '#');
+    return '<div class="fail-card">' +
+      '<div class="wf">' + esc(f.workflow_name) + '</div>' +
+      '<div class="err">' + esc(f.error_message || 'Unknown error') + '</div>' +
+      '<div class="meta">' +
+        '<span class="rid">#' + esc(f.execution_id || '—') + '</span>' +
+        '<span>' + fmtDateTime(f.started_at) + '</span>' +
+        '<a class="view" href="' + esc(url) + '" target="_blank" rel="noopener">view →</a>' +
+      '</div></div>';
+  }).join('');
+}
+
+function renderHealth(s) {
+  const body = $('health-body');
+  $('health-count').textContent = s.health.length ? s.health.length : '';
+  if (s.health.length === 0) {
+    body.innerHTML = '<div class="empty">No workflow data</div>';
+    return;
+  }
+  body.innerHTML = s.health.map(h =>
+    '<div class="health-row">' +
+      '<div class="sq ' + h.state + '"></div>' +
+      '<div class="name" title="' + esc(h.name) + '">' + esc(h.name) + '</div>' +
+      '<div class="meta">' + fmtDateTime(h.lastRun) + '<br><span class="runs">' + h.weekCount + ' runs/wk</span></div>' +
+    '</div>'
+  ).join('');
+}
+
+function renderFeed(s) {
+  const body = $('feed-body');
+  $('feed-count').textContent = s.feed.length ? s.feed.length : '';
+  if (s.feed.length === 0) {
+    body.innerHTML = '<div class="empty">No executions yet</div>';
+    return;
+  }
+  body.innerHTML = s.feed.map(e => {
+    let dotCls = 'idle', stCls = 'idle', stLabel = e.status || 'idle';
+    if (e.status === 'success') { dotCls = 'ok'; stCls = 'ok'; stLabel = 'success'; }
+    else if (e.status === 'error') { dotCls = 'failed'; stCls = 'failed'; stLabel = 'failed'; }
+    else if (e.status === 'running') { dotCls = 'running'; stCls = 'running'; stLabel = 'running'; }
+    const errHtml = (e.status === 'error' && e.error_message)
+      ? '<div class="wferr">' + esc(e.error_message) + '</div>' : '';
+    const ec = s.execCosts[e.execution_id] || null;
+    const costHtml = ec
+      ? '<span style="color:var(--body)">$' + ec.api.toFixed(2) + '</span><span style="color:var(--muted);font-size:9px"> API</span><br>' +
+        '<span style="color:var(--body)">$' + ec.apify.toFixed(2) + '</span><span style="color:var(--muted);font-size:9px"> Apify</span>'
+      : '—';
+    return '<div class="feed-row">' +
+      '<div class="dotcell"><div class="dot ' + dotCls + '"></div></div>' +
+      '<div><div class="wfname" title="' + esc(e.workflow_name) + '">' + esc(e.workflow_name) + '</div>' + errHtml + '</div>' +
+      '<div class="time">' + fmtDateTime(e.started_at) + '</div>' +
+      '<div class="dur">' + costHtml + '</div>' +
+      '<div class="status ' + stCls + '">' + esc(stLabel) + '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function renderCost(s) {
+  $('cost-claude').textContent = fmtMoney(s.claudeMonth);
+  $('cost-apify').textContent = fmtMoney(s.apifyMonth);
+  $('cost-total').textContent = fmtMoney(s.totalMonth);
+  $('cost-proj').textContent = fmtMoney(s.projection);
+}
+
+function renderBarChart(s) {
+  const max = Math.max(...s.dailySpend.map(d => d.total), 0);
+  const html = s.dailySpend.map((d, i) => {
+    const pct = max > 0 ? (d.total / max) * 100 : 0;
+    const isLast = i === s.dailySpend.length - 1;
+    return '<div class="bar' + (isLast ? ' last' : '') + '" style="height:' + pct.toFixed(1) + '%" title="' + d.key + ': ' + fmtMoney(d.total) + '"></div>';
+  }).join('');
+  $('barchart').innerHTML = html;
+  $('chart-start').textContent = s.dailySpend[0].key.slice(5); // MM-DD
+}
+
+function renderTokens(s) {
+  const models = ['Opus', 'Sonnet', 'Haiku'];
+  const maxTok = Math.max(...models.map(m => s.modelAgg[m].input + s.modelAgg[m].output), 0);
+  $('token-body').innerHTML = models.map(m => {
+    const agg = s.modelAgg[m];
+    const tot = agg.input + agg.output;
+    const pct = maxTok > 0 ? (tot / maxTok) * 100 : 0;
+    return '<div class="tok-row">' +
+      '<div class="model">' + m + '</div>' +
+      '<div class="tok-bar-wrap"><div class="tok-bar" style="width:' + pct.toFixed(1) + '%"></div></div>' +
+      '<div class="right">' + fmtTokens(tot) + '<br><span class="cost">' + fmtMoney(agg.cost) + '</span></div>' +
+    '</div>';
+  }).join('');
+}
+
+function renderHeatmap(s) {
+  const max = Math.max(...s.heat.map(h => h.count), 0);
+  // Build column-major (13 cols x 7 rows). heat is 90 days oldest->newest.
+  // We render 91 cells (13*7); pad front so newest ends bottom-right.
+  const cells = s.heat.slice(); // 90
+  // pad to 91 at front with empty
+  while (cells.length < 91) cells.unshift({ key: '', count: -1 });
+  let html = '';
+  for (const c of cells) {
+    let lvl = 0;
+    if (c.count > 0 && max > 0) {
+      lvl = Math.ceil((c.count / max) * 4);
+      if (lvl < 1) lvl = 1; if (lvl > 4) lvl = 4;
+    }
+    const cls = c.count < 0 ? 'hm-cell' : 'hm-cell' + (lvl > 0 ? ' l' + lvl : '');
+    const title = c.count < 0 ? '' : (c.key + ': ' + c.count + ' runs');
+    html += '<div class="' + cls + '" title="' + title + '"></div>';
+  }
+  $('heatmap').innerHTML = html;
+}
+
+function renderWfCost(s) {
+  const body = $('wfcost-body');
+  if (s.wfCostRanked.length === 0) {
+    body.innerHTML = '<div class="empty">No cost data this month</div>';
+    return;
+  }
+  const max = s.wfCostRanked[0].cost || 1;
+  body.innerHTML = s.wfCostRanked.slice(0, 12).map(w => {
+    const pct = max > 0 ? (w.cost / max) * 100 : 0;
+    const avgTxt = w.runs > 0 ? fmtMoney(w.avg) + '/run · ' + w.runs + ' runs · ' : '';
+    return '<div class="wfcost-row">' +
+      '<div class="top"><span class="nm" title="' + esc(w.name) + '">' + esc(w.name) + '</span><span class="cv">' + avgTxt + fmtMoney(w.cost) + '</span></div>' +
+      '<div class="wfcost-bar-wrap"><div class="wfcost-bar" style="width:' + pct.toFixed(1) + '%"></div></div>' +
+    '</div>';
+  }).join('');
+}
+
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function fmtDayMon(d) { return d.getDate() + ' ' + MONTHS[d.getMonth()]; }
+
+// Trend view state. Persists across the 30s refresh so toggling sticks.
+let trendView = 'weekly';
+let lastStats = null;
+
+function renderTrends(s) {
+  if (!s) return;
+  const isWeekly = trendView === 'weekly';
+  const data = isWeekly ? s.weekly : s.monthly;
+  const chart = $('trend-chart'), rows = $('trend-rows');
+  if (!data || data.length === 0) {
+    chart.innerHTML = '';
+    rows.innerHTML = '<div class="empty">No trend data</div>';
+    return;
+  }
+  // Bars are scaled by cost (matches the daily-spend chart above).
+  const max = Math.max(...data.map(d => d.cost), 0);
+  chart.innerHTML = data.map((d, i) => {
+    const pct = max > 0 ? (d.cost / max) * 100 : 0;
+    const isLast = i === data.length - 1;
+    const lbl = isWeekly ? ('wk of ' + fmtDayMon(d.date)) : (MONTHS[d.date.getMonth()] + ' ' + d.date.getFullYear());
+    return '<div class="bar' + (isLast ? ' last' : '') + '" style="height:' + pct.toFixed(1) +
+      '%" title="' + lbl + ': ' + fmtMoney(d.cost) + ' · ' + d.runs + ' runs"></div>';
+  }).join('');
+
+  $('trend-start').textContent = isWeekly ? fmtDayMon(data[0].date) : MONTHS[data[0].date.getMonth()];
+  $('trend-end').textContent = isWeekly ? 'this wk' : 'this mo';
+
+  // Most-recent period first.
+  const ordered = [...data].reverse();
+  rows.innerHTML = ordered.map(d => {
+    const fin = d.success + d.error;
+    const sr = fin > 0 ? Math.round((d.success / fin) * 100) + '%' : '—';
+    const label = isWeekly ? ('Wk of ' + fmtDayMon(d.date)) : (MONTHS[d.date.getMonth()] + ' ' + d.date.getFullYear());
+    return '<div class="trend-row">' +
+      '<div class="tlabel">' + label + '</div>' +
+      '<div class="tmeta">' + d.runs + ' runs · ' + sr + ' ok<br><span class="tcost">' + fmtMoney(d.cost) + '</span></div>' +
+    '</div>';
+  }).join('');
+}
+
+function setTrendView(v) {
+  trendView = v;
+  $('vt-weekly').classList.toggle('active', v === 'weekly');
+  $('vt-monthly').classList.toggle('active', v === 'monthly');
+  renderTrends(lastStats);
+}
+
+function renderTicker(s, ok) {
+  // Derive simple health signals from data
+  const set = (ledId, txtId, cls, txt) => {
+    const led = $(ledId);
+    led.className = 'led' + (cls ? ' ' + cls : '');
+    $(txtId).textContent = txt;
+  };
+  if (ok) {
+    set('tk-webhook-led', 'tk-webhook', '', 'live');
+    // queue depth = running executions
+    const running = s.feed.filter(e => e.status === 'running').length;
+    $('tk-queue').textContent = running;
+    set('tk-claude-led', 'tk-claude', s.claudeMonth >= 0 ? '' : 'warn', 'ok');
+    set('tk-apify-led', 'tk-apify', '', 'ok');
+  } else {
+    set('tk-webhook-led', 'tk-webhook', 'down', 'unknown');
+    $('tk-queue').textContent = '—';
+    set('tk-claude-led', 'tk-claude', 'down', 'unknown');
+    set('tk-apify-led', 'tk-apify', 'down', 'unknown');
+  }
+  const now = new Date();
+  $('tk-refresh').textContent = now.toLocaleTimeString('en-GB');
+}
+
+function setConn(state) {
+  const c = $('conn');
+  if (state === 'live') {
+    c.className = 'conn live';
+    $('conn-text').textContent = 'live';
+  } else if (state === 'lost') {
+    c.className = 'conn lost';
+    $('conn-text').textContent = 'connection lost';
+  } else {
+    c.className = 'conn';
+    $('conn-text').textContent = 'connecting…';
+  }
+}
+
+// ============================================================================
+// MAIN REFRESH LOOP
+// ============================================================================
+let consecutiveFailures = 0;
+async function refresh() {
+  // Guard: config not filled in
+  if (CONFIG.SHEET_ID === 'YOUR_SHEET_ID_HERE' || CONFIG.API_KEY === 'YOUR_GOOGLE_API_KEY_HERE') {
+    setConn('lost');
+    $('conn-text').textContent = 'fill in CONFIG';
+    // still render an empty-but-valid dashboard
+    const empty = computeStats([], []);
+    renderAll(empty, false);
+    return;
+  }
+  try {
+    const [execVals, tokVals] = await Promise.all([
+      fetchTab('executions'),
+      fetchTab('token_logs'),
+    ]);
+    const executions = parseExecutions(execVals);
+    const tokens = parseTokens(tokVals);
+    const stats = computeStats(executions, tokens);
+    renderAll(stats, true);
+    consecutiveFailures = 0;
+    setConn('live');
+  } catch (err) {
+    console.error('Refresh failed:', err);
+    consecutiveFailures++;
+    // Tolerate a single transient blip — keep last-good data and stay "live".
+    // Only declare the connection lost after two failed cycles in a row.
+    if (consecutiveFailures >= 2) {
+      setConn('lost');
+      renderTicker(lastStats || computeStats([], []), false);
+    }
+  }
+}
+
+function renderAll(s, ok) {
+  lastStats = s;
+  renderStats(s);
+  renderFailures(s);
+  renderHealth(s);
+  renderFeed(s);
+  renderCost(s);
+  renderBarChart(s);
+  renderTrends(s);
+  renderTokens(s);
+  renderHeatmap(s);
+  renderWfCost(s);
+  renderTicker(s, ok);
+}
+
+// ============================================================================
+// CLOCK
+// ============================================================================
+function tickClock() {
+  const now = new Date();
+  $('clock').textContent = now.toLocaleTimeString('en-GB') + ' · ' +
+    now.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' });
+}
+
+// ============================================================================
+// BOOT
+// ============================================================================
+tickClock();
+setInterval(tickClock, 1000);
+$('vt-weekly').addEventListener('click', () => setTrendView('weekly'));
+$('vt-monthly').addEventListener('click', () => setTrendView('monthly'));
+refresh();
+setInterval(refresh, CONFIG.REFRESH_INTERVAL_MS);
+</script>
+
+<!-- ========================================================================
+     GOOGLE APPS SCRIPT — Code.gs (copy-paste ready)
+     ===================================================================== -->
+<script type="text/template" id="apps-script-code">
+/**
+ * Soch Ops Dashboard — telemetry endpoint (Code.gs)
+ * Deploy as Web App: Execute as "Me", Access "Anyone".
+ * Accepts POST with a JSON body. `log_type` decides the target tab.
+ *
+ * For an "execution" log, send:
+ *   { log_type:"execution", workflow_name, workflow_id, execution_id, status,
+ *     started_at, finished_at, duration_ms, error_message, execution_url }
+ *
+ * For a "token" log, send:
+ *   { log_type:"token", execution_id, workflow_name, model,
+ *     input_tokens, output_tokens, cost_usd, logged_at }
+ */
+function doPost(e) {
+  try {
+    var body = JSON.parse(e.postData.contents);
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var type = (body.log_type || 'execution').toLowerCase();
+
+    if (type === 'token') {
+      var t = ss.getSheetByName('token_logs');
+      t.appendRow([
+        body.execution_id || '',
+        body.workflow_name || '',
+        body.model || '',
+        body.input_tokens || 0,
+        body.output_tokens || 0,
+        body.cost_usd || 0,
+        body.logged_at || new Date().toISOString()
+      ]);
+    } else {
+      var x = ss.getSheetByName('executions');
+      x.appendRow([
+        body.workflow_name || '',
+        body.workflow_id || '',
+        body.execution_id || '',
+        body.status || '',
+        body.started_at || '',
+        body.finished_at || '',
+        body.duration_ms || '',
+        body.error_message || '',
+        body.execution_url || ''
+      ]);
+    }
+    return ContentService
+      .createTextOutput(JSON.stringify({ success: true }))
+      .setMimeType(ContentService.MimeType.JSON);
+  } catch (err) {
+    return ContentService
+      .createTextOutput(JSON.stringify({ success: false, error: String(err) }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+}
+</script>
+
+<!-- ========================================================================
+     n8n HTTP REQUEST NODE — importable JSON (copy to clipboard, paste into canvas)
+     Replace APPS_SCRIPT_URL with your deployed Web App URL.
+     ===================================================================== -->
+<script type="text/template" id="n8n-http-node">
+{
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "APPS_SCRIPT_URL",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ log_type: 'execution', workflow_name: $workflow.name, workflow_id: $workflow.id, execution_id: $execution.id, status: $execution.error ? 'error' : 'success', started_at: $now.toISO(), finished_at: $now.toISO(), duration_ms: 0, error_message: $execution.error ? ($execution.error.message || '') : '', execution_url: 'https://sochconsulting.app.n8n.cloud/workflow/' + $workflow.id + '/executions/' + $execution.id }) }}",
+        "options": {}
+      },
+      "name": "Log Telemetry",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 300]
+    }
+  ],
+  "connections": {}
+}
+</script>
+
+<!-- ========================================================================
+     SETUP INSTRUCTIONS (plain English)
+     ===================================================================== -->
+<script type="text/template" id="setup-instructions">
+SOCH OPS DASHBOARD — SETUP
+
+1. CREATE THE GOOGLE SHEET
+   - Make a new Google Sheet.
+   - Create two tabs, named EXACTLY (lowercase): "executions" and "token_logs".
+   - In "executions" row 1, add these headers (A→I):
+       workflow_name | workflow_id | execution_id | status | started_at |
+       finished_at | duration_ms | error_message | execution_url
+   - In "token_logs" row 1, add these headers (A→G):
+       execution_id | workflow_name | model | input_tokens | output_tokens |
+       cost_usd | logged_at
+   - The dashboard matches columns BY HEADER NAME, so order is flexible as long
+     as the names match exactly.
+
+2. CREATE THE APPS SCRIPT ENDPOINT
+   - In the Sheet: Extensions → Apps Script.
+   - Delete the starter code, paste the contents of the <script id="apps-script-code">
+     block (Code.gs) from this HTML file.
+   - Click Deploy → New deployment → type "Web app".
+   - Execute as: Me.  Who has access: Anyone.
+   - Deploy, authorize, and COPY the Web App URL — that is your APPS_SCRIPT_URL.
+
+3. MAKE THE SHEET READABLE BY API KEY
+   - File → Share → General access → "Anyone with the link" → Viewer.
+     (Public read-only is required for the API-key-only fetch; no OAuth.)
+
+4. GET A GOOGLE SHEETS API KEY
+   - Go to Google Cloud Console → create/select a project.
+   - Enable "Google Sheets API".
+   - APIs & Services → Credentials → Create credentials → API key.
+   - (Optional but recommended) Restrict the key to the Sheets API + your domain.
+
+5. FILL IN CONFIG (top of this HTML file's <script> block)
+   - SHEET_ID: the long ID from the Sheet URL (.../spreadsheets/d/THIS_PART/edit).
+   - API_KEY: the key from step 4.
+   - N8N_HOST: already set to https://sochconsulting.app.n8n.cloud
+   - APIFY_MONTHLY_SPEND: update manually each month (or wire from a sheet cell).
+
+6. ADD TELEMETRY TO YOUR n8n WORKFLOWS
+   - Copy the <script id="n8n-http-node"> JSON, paste it onto each workflow's canvas.
+   - Set the node URL to your APPS_SCRIPT_URL.
+   - Wire it as the LAST node (and/or off the error path) so every run logs.
+   - For token logging, duplicate the node, set log_type to "token", and map
+     model / input_tokens / output_tokens / cost_usd from your AI node output.
+
+7. OPEN THE DASHBOARD
+   - Double-click soch-ops-dashboard.html to open in Chrome, OR
+   - Deploy to Cloudflare Pages / any static host for a permanent second-monitor URL.
+   - It refreshes every 30s. The clock ticks live. Connection state shows top-right.
+</script>
+
+
+<a href="index.html" style="position:fixed;left:14px;bottom:14px;z-index:9998;font-family:monospace;font-size:11px;color:#EA6A47;text-decoration:none;background:#161616;border:1px solid #333;padding:6px 12px;border-radius:6px">&larr; back to dashboard</a>
+<div id="ops-gate" style="position:fixed;inset:0;background:#0C0C0C;z-index:9999;display:flex;align-items:center;justify-content:center">
+  <div style="text-align:center;font-family:monospace;color:#ddd;max-width:320px">
+    <div style="font-size:18px;margin-bottom:6px;color:#EA6A47">SOCH OPS — LIVE</div>
+    <div style="font-size:12px;color:#888;margin-bottom:18px">Enter the access code to view live telemetry.</div>
+    <input id="ops-code" type="password" style="width:100%;padding:10px;background:#161616;border:1px solid #333;color:#ddd;font-family:monospace;text-align:center;border-radius:6px" placeholder="access code">
+    <button id="ops-go" style="width:100%;margin-top:10px;padding:10px;background:#EA6A47;border:0;color:#fff;font-family:monospace;cursor:pointer;border-radius:6px">ENTER</button>
+    <div id="ops-err" style="font-size:11px;color:#c0392b;margin-top:8px;visibility:hidden">wrong code</div>
+  </div>
+</div>
+<script>
+(function(){
+  var HASH = 'f57d557d4cc61d3af300f208cf4bbdc36252b97d3eef3e938367fb8cab5b9a76';
+  async function sha(s){
+    var b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s));
+    return Array.from(new Uint8Array(b)).map(function(x){return x.toString(16).padStart(2,'0')}).join('');
+  }
+  var gate = document.getElementById('ops-gate');
+  if (localStorage.getItem('soch-ops-ok') === HASH) gate.style.display = 'none';
+  async function tryCode(){
+    var v = document.getElementById('ops-code').value.trim();
+    if (!v) return;
+    if (await sha(v) === HASH) { localStorage.setItem('soch-ops-ok', HASH); gate.style.display = 'none'; }
+    else document.getElementById('ops-err').style.visibility = 'visible';
+  }
+  document.getElementById('ops-go').addEventListener('click', tryCode);
+  document.getElementById('ops-code').addEventListener('keydown', function(e){ if (e.key === 'Enter') tryCode(); });
+})();
+</script>
+</body>
+</html>
