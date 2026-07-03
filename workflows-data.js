@@ -71,7 +71,7 @@ const WORKFLOWS = [
   "id": "doiwqpa0ppPREtbA",
   "status": "active",
   "cat": "content",
-  "desc": "Scrapes an IG profile/reels via Apify, Claude analyses themes, hooks and engagement patterns, produces reel scripts + an intelligence report. Recently retuned for Rizwan's audience.",
+  "desc": "Scrapes an IG profile/reels via Apify, Claude analyses themes, hooks and engagement patterns, produces reel scripts + an intelligence report. Recently retuned for the client's audience.",
   "inputs": "IG profile or reel URL",
   "outputs": "Intelligence report + reel scripts in Sheets",
   "trigger": "Webhook + Manual",
@@ -764,7 +764,7 @@ const WORKFLOWS = [
   "cat": "test"
  },
  {
-  "name": "My workflow Azka",
+  "name": "My workflow Consultant",
   "id": "pmVtmE8mcYb2aFUJ",
   "status": "inactive",
   "cat": "test"
@@ -794,7 +794,7 @@ const WORKFLOWS = [
   "cat": "linkedin"
  },
  {
-  "name": "Practice with Riz",
+  "name": "Practice session",
   "id": "Tl3yzzaiJiX7gNVY",
   "status": "inactive",
   "cat": "test"
@@ -1010,26 +1010,26 @@ const WORKFLOWS = [
   "cat": "upwork"
  },
  {
-  "name": "Upwork Job Extracting on Clickup - Hijab",
-  "id": "Nf6f3zXrCw1nGYHm",
-  "status": "inactive",
-  "cat": "upwork"
- },
- {
-  "name": "Upwork Job Extracting on Clickup - Rizwan",
+  "name": "Upwork Job Extracting on Clickup - Consultant",
   "id": "1TSFzM0tscFSctzg",
   "status": "inactive",
   "cat": "upwork"
  },
  {
-  "name": "Upwork Job Extracting on Clickup - Umair",
+  "name": "Upwork Job Extracting on Clickup - Consultant",
+  "id": "4cXmATH81s7CoVfI",
+  "status": "inactive",
+  "cat": "upwork"
+ },
+ {
+  "name": "Upwork Job Extracting on Clickup - Consultant",
   "id": "6PaCBFUfI7j6QZGF",
   "status": "inactive",
   "cat": "upwork"
  },
  {
-  "name": "Upwork Job Extracting on Clickup - Zain",
-  "id": "4cXmATH81s7CoVfI",
+  "name": "Upwork Job Extracting on Clickup - Consultant",
+  "id": "Nf6f3zXrCw1nGYHm",
   "status": "inactive",
   "cat": "upwork"
  },
@@ -1196,7 +1196,7 @@ const WORKFLOWS = [
   "cat": "upwork"
  },
  {
-  "name": "Upwork Job Extracting on Clickup - Wajeeh",
+  "name": "Upwork Job Extracting on Clickup - Consultant",
   "id": "wZMHHaK8gUBEDk6v",
   "status": "archived",
   "cat": "upwork"
