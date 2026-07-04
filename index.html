@@ -246,11 +246,14 @@
    run `node scripts/generate-workflow-data.js` to refresh it).
    ================================================================ */
 
-const LAST_UPDATED = "5 July 2026, 1:00 PM PKT";
+const LAST_UPDATED = "5 July 2026, 2:45 PM PKT";
 
 const N8N_BASE = "https://sochconsulting.app.n8n.cloud/workflow/";
 
 const CHANGELOG = [
+  { date:"5 Jul 2026, 2:45 PM", wf:"This dashboard",
+    what:"Chat assistant workflow lookup made much more forgiving",
+    note:"Asking about a workflow with a loose or partial name (e.g. 'the SEO final workflow') sometimes meant the assistant couldn't find its node details and gave a vague answer. The lookup now matches individual distinctive words, not just exact name phrases, so detail questions land on the right workflow far more reliably." },
   { date:"5 Jul 2026, 1:00 PM", wf:"Whole fleet",
     what:"Fleet cleanup: 90 obsolete workflows removed",
     note:"Deleted temporary test workflows, old tutorial imports, and superseded older versions of current workflows (old audit, proposal, and Upwork extraction iterations). Every deleted workflow was backed up first, so any can be restored if needed. All live production workflows are untouched — the fleet is now much easier to navigate." },
