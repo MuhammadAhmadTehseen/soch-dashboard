@@ -246,11 +246,14 @@
    run `node scripts/generate-workflow-data.js` to refresh it).
    ================================================================ */
 
-const LAST_UPDATED = "5 July 2026, 2:00 AM PKT";
+const LAST_UPDATED = "5 July 2026, 2:30 AM PKT";
 
 const N8N_BASE = "https://sochconsulting.app.n8n.cloud/workflow/";
 
 const CHANGELOG = [
+  { date:"5 Jul 2026, 2:30 AM", wf:"This dashboard",
+    what:"Chat assistant now picks the right workflow for detail questions",
+    note:"When two workflows have similar names (e.g. the main SEO pipeline and its keyword-discovery sub-workflow), the assistant was pulling node details from the wrong one. It now considers both and answers from the correct workflow." },
   { date:"5 Jul 2026, 2:00 AM", wf:"This dashboard",
     what:"Chat assistant back online + faster recovery after downtime",
     note:"The chat assistant was showing offline because its host machine had restarted. It's back up now, and a one-click launcher was added on the host so it comes back online much quicker after any restart." },
