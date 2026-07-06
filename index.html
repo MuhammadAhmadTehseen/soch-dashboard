@@ -251,9 +251,9 @@ const LAST_UPDATED = "5 July 2026, 2:45 PM PKT";
 const N8N_BASE = "https://sochconsulting.app.n8n.cloud/workflow/";
 
 const CHANGELOG = [
-  { date:"6 Jul 2026, 7:15 PM", wf:"Reimbursements",
+  { date:"6 Jul 2026, 9:10 PM", wf:"Reimbursements",
     what:"New reimbursement request tracker + approval-to-payment reminder",
-    note:"Set up a place to log staff reimbursement requests — each one captures who's claiming, the item, the amount, the bank details, the reason, and the receipt image(s). When a request is marked Approved, an automation instantly notifies the approver to process payment, both as an in-app note on the request and by email, with a direct link so the invoice can be checked in one click. Tested end to end." },
+    note:"Set up a dedicated place to log staff reimbursement requests — each one captures who's claiming, the item, the amount, the bank details, the reason, and the receipt image(s), and moves through clear stages (New, Approved, Payment in Progress, Paid, Rejected). New requests are auto-assigned to the people who handle payments. The moment a request is marked Approved, an automation instantly notifies the approver to process payment — both as a note on the request and by email — with a direct link so the invoice can be checked in one click. Tested end to end." },
   { date:"5 Jul 2026, 2:45 PM", wf:"This dashboard",
     what:"Chat assistant workflow lookup made much more forgiving",
     note:"Asking about a workflow with a loose or partial name (e.g. 'the SEO final workflow') sometimes meant the assistant couldn't find its node details and gave a vague answer. The lookup now matches individual distinctive words, not just exact name phrases, so detail questions land on the right workflow far more reliably." },
