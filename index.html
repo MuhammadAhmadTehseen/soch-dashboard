@@ -251,6 +251,9 @@ const LAST_UPDATED = "5 July 2026, 2:45 PM PKT";
 const N8N_BASE = "https://sochconsulting.app.n8n.cloud/workflow/";
 
 const CHANGELOG = [
+  { date:"8 Jul 2026, 3:10 PM", wf:"Pre-Call Flow",
+    what:"Connected the live booking page and fixed the first-booking error",
+    note:"The first real booking came through from the booking page and the sequence errored out because the booking details arrived in a slightly different shape than expected, so it couldn't read the call time. Updated it to read the real booking format (name, email, call time in the guest's own timezone, meeting link, reschedule link), added a clear safety check so any future format hiccup fails with a readable message instead of a crash, and re-tested against the exact booking that failed — it now reads everything correctly. Two finishing items remain before it's fully switched on: a couple of content links and pointing the emails at the right sending mailbox." },
   { date:"8 Jul 2026, 6:30 PM", wf:"Pre-Call Flow",
     what:"New automated pre-call nurture sequence for booked audit calls",
     note:"When someone books an audit call, an automation now warms them up with a timed run of prep emails leading right up to the call: an instant booking confirmation, a day-before note with a few real case studies, a short FAQ covering cost and timelines, a 2-hour-before agenda, and a final 'starting soon' reminder with the join link. Everything is timed off the actual call slot and skips any step that no longer makes sense for a last-minute booking. Built, switched on, and checked end to end; a couple of content links and the sending mailbox are being finalised before it goes fully live." },
