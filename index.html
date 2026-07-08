@@ -251,6 +251,9 @@ const LAST_UPDATED = "5 July 2026, 2:45 PM PKT";
 const N8N_BASE = "https://sochconsulting.app.n8n.cloud/workflow/";
 
 const CHANGELOG = [
+  { date:"8 Jul 2026, 6:30 PM", wf:"Pre-Call Flow",
+    what:"New automated pre-call nurture sequence for booked audit calls",
+    note:"When someone books an audit call, an automation now warms them up with a timed run of prep emails leading right up to the call: an instant booking confirmation, a day-before note with a few real case studies, a short FAQ covering cost and timelines, a 2-hour-before agenda, and a final 'starting soon' reminder with the join link. Everything is timed off the actual call slot and skips any step that no longer makes sense for a last-minute booking. Built, switched on, and checked end to end; a couple of content links and the sending mailbox are being finalised before it goes fully live." },
   { date:"6 Jul 2026, 9:10 PM", wf:"Reimbursements",
     what:"New reimbursement request tracker + approval-to-payment reminder",
     note:"Set up a dedicated place to log staff reimbursement requests — each one captures who's claiming, the item, the amount, the bank details, the reason, and the receipt image(s), and moves through clear stages (New, Approved, Payment in Progress, Paid, Rejected). New requests are auto-assigned to the people who handle payments. The moment a request is marked Approved, an automation instantly notifies the approver to process payment — both as a note on the request and by email — with a direct link so the invoice can be checked in one click. Tested end to end." },
