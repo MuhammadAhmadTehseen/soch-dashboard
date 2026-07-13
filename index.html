@@ -251,6 +251,9 @@ const LAST_UPDATED = "13 July 2026";
 const N8N_BASE = "https://sochconsulting.app.n8n.cloud/workflow/";
 
 const CHANGELOG = [
+  { date:"13 Jul 2026", wf:"Whole fleet",
+    what:"Every live workflow now carries on-canvas documentation",
+    note:"Rolled the colour-coded documentation panels out across all 31 live workflows. Each workflow's canvas is now divided into labelled phases — what each stage does, what goes in, what comes out, and what to watch out for — so anyone opening any workflow can understand and safely maintain it without tracing wires. Workflows that already had notes kept their content (rewritten into the same consistent style), a few layout defects were fixed (notes hiding under other notes, panels overlapping), and nothing functional was touched — every workflow stayed live throughout." },
   { date:"13 Jul 2026", wf:"CRM Pipeline Sync",
     what:"Added on-canvas documentation to the pipeline sync workflow",
     note:"The workflow that moves hot leads from the task board into the CRM now carries colour-coded documentation notes directly on its canvas. Each stage — receiving the trigger, pulling the lead's details, matching or creating the company, matching or creating the contact, creating the deal, and writing everything back to the task — has its own note explaining what it does, what goes in, what comes out, and what to watch out for. Anyone opening the workflow can now understand and safely maintain it without tracing every connection by hand. First of a planned rollout across all live workflows." },
