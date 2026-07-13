@@ -246,11 +246,14 @@
    run `node scripts/generate-workflow-data.js` to refresh it).
    ================================================================ */
 
-const LAST_UPDATED = "5 July 2026, 2:45 PM PKT";
+const LAST_UPDATED = "13 July 2026";
 
 const N8N_BASE = "https://sochconsulting.app.n8n.cloud/workflow/";
 
 const CHANGELOG = [
+  { date:"13 Jul 2026", wf:"CRM Pipeline Sync",
+    what:"Added on-canvas documentation to the pipeline sync workflow",
+    note:"The workflow that moves hot leads from the task board into the CRM now carries colour-coded documentation notes directly on its canvas. Each stage — receiving the trigger, pulling the lead's details, matching or creating the company, matching or creating the contact, creating the deal, and writing everything back to the task — has its own note explaining what it does, what goes in, what comes out, and what to watch out for. Anyone opening the workflow can now understand and safely maintain it without tracing every connection by hand. First of a planned rollout across all live workflows." },
   { date:"8 Jul 2026, 7:30 PM", wf:"Email Outreach Intake",
     what:"New: interested cold-email leads now flow automatically into the leads board",
     note:"Connected the cold-email outreach tool to the leads board. When a prospect replies and is marked interested, a lead is created automatically on the board (with their name, company, email, the reply text, and a link back to the conversation) ready for the team to review and take forward — no more copying replies across by hand. Only genuinely interested replies come through, duplicates are filtered out so the same person can't land twice, and a hiccup in the tool can never drop a lead. Built, switched on, and tested end to end; the last step is flipping the switch on the outreach-tool side to start sending live." },
