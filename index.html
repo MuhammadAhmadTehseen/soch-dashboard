@@ -252,6 +252,9 @@ const N8N_BASE = "https://sochconsulting.app.n8n.cloud/workflow/";
 
 const CHANGELOG = [
   { date:"13 Jul 2026", wf:"Whole fleet",
+    what:"Canvas cleanup: no two workflow steps overlap anywhere anymore",
+    note:"Follow-up to the documentation rollout: a scan of every live workflow found 54 steps sitting on top of each other (mostly logging steps that had been dropped onto existing ones, hiding them from view). Each was moved to a clear spot — positions only, zero changes to what any workflow does — and a re-scan confirmed every canvas is now fully readable with nothing hidden. All workflows stayed live throughout." },
+  { date:"13 Jul 2026", wf:"Whole fleet",
     what:"Every live workflow now carries on-canvas documentation",
     note:"Rolled the colour-coded documentation panels out across all 31 live workflows. Each workflow's canvas is now divided into labelled phases — what each stage does, what goes in, what comes out, and what to watch out for — so anyone opening any workflow can understand and safely maintain it without tracing wires. Workflows that already had notes kept their content (rewritten into the same consistent style), a few layout defects were fixed (notes hiding under other notes, panels overlapping), and nothing functional was touched — every workflow stayed live throughout." },
   { date:"13 Jul 2026", wf:"CRM Pipeline Sync",
