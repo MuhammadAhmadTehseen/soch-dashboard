@@ -246,11 +246,14 @@
    run `node scripts/generate-workflow-data.js` to refresh it).
    ================================================================ */
 
-const LAST_UPDATED = "13 July 2026";
+const LAST_UPDATED = "14 July 2026";
 
 const N8N_BASE = "https://sochconsulting.app.n8n.cloud/workflow/";
 
 const CHANGELOG = [
+  { date:"14 Jul 2026", wf:"Approval Reminder",
+    what:"Fixed an approval automation that had quietly stopped triggering",
+    note:"An internal request-approval automation had gone silent — new form submissions were no longer kicking it off, even though the automation itself was switched on and healthy. The cause was on the form side: the connection that tells the automation a new request came in had been lost, so nothing was reaching it. Re-established that connection (now confirmed active), handled the one request that had come in while it was down, and verified the whole flow end to end with a throwaway test. New submissions now trigger the automation correctly again." },
   { date:"13 Jul 2026", wf:"Whole fleet",
     what:"Canvas cleanup: no two workflow steps overlap anywhere anymore",
     note:"Follow-up to the documentation rollout: a scan of every live workflow found 54 steps sitting on top of each other (mostly logging steps that had been dropped onto existing ones, hiding them from view). Each was moved to a clear spot — positions only, zero changes to what any workflow does — and a re-scan confirmed every canvas is now fully readable with nothing hidden. All workflows stayed live throughout." },
