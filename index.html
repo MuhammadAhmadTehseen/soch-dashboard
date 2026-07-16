@@ -251,6 +251,9 @@ const LAST_UPDATED = "14 July 2026";
 const N8N_BASE = "https://sochconsulting.app.n8n.cloud/workflow/";
 
 const CHANGELOG = [
+  { date:"16 Jul 2026", wf:"Upwork → Video Script",
+    what:"Approving a bid now auto-writes a short walkthrough-video script and hands it to the recorder",
+    note:"New automation on the Upwork bidding board. When a bid's new 'Video Script' stage is set to approved, it reads that job's description plus the proposal already sent for it, and writes a short spoken-word script for a 60–90 second walkthrough video explaining how we'd deliver the job. The script is posted straight onto the bid as a comment, the teammate who records the videos is assigned and notified, and the stage advances to 'script generated' automatically so it never fires twice. Built and verified end to end on a throwaway bid — trigger, job + proposal read, delivery, assignment and stage update all confirmed working; the script-writing step itself is waiting on a refreshed AI key." },
   { date:"15 Jul 2026", wf:"Upwork → CRM Handoff",
     what:"Handoff now keeps the bid on the board instead of clearing it",
     note:"Adjusted the Upwork-to-CRM handoff so a bid stays on the bidding board when it reaches the messaging stage, while still creating its matching lead in the pipeline. The bid's full history now lives in both places — the original card is no longer removed. Everything else is unchanged: the moment a bid hits the 'on-going messaging' stage, its company, contact, email, phone, profile link and job context are copied into the leads pipeline as a fresh lead." },
