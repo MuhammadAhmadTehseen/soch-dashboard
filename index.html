@@ -251,6 +251,9 @@ const LAST_UPDATED = "14 July 2026";
 const N8N_BASE = "https://sochconsulting.app.n8n.cloud/workflow/";
 
 const CHANGELOG = [
+  { date:"22 Jul 2026", wf:"Pre-Call Nurture Sequence",
+    what:"Refreshed the booking-reminder email copy and swapped in the current case studies",
+    note:"Updated the automated email sequence that goes out after someone books a discovery call. The instant confirmation email is now tighter — it points people to accept the calendar invite and gives them a direct reschedule and WhatsApp link, with the real WhatsApp number now live in place of the placeholder. The 24-hour reminder now features four current client case studies (across clinics, med-spas, hospitality and serviced apartments) with real result numbers and links, replacing the earlier sample examples. Timing, reminders and all other steps are unchanged." },
   { date:"16 Jul 2026", wf:"Upwork → Video Script",
     what:"Approving a bid now auto-writes a short walkthrough-video script and hands it to the recorder",
     note:"New automation on the Upwork bidding board. When a bid's new 'Video Script' stage is set to approved, it reads that job's description plus the proposal already sent for it, and writes a short spoken-word script for a 60–90 second walkthrough video explaining how we'd deliver the job. The script is posted straight onto the bid as a comment, the teammate who records the videos is assigned and notified, and the stage advances to 'script generated' automatically so it never fires twice. Built and verified end to end on a throwaway bid — trigger, job + proposal read, delivery, assignment and stage update all confirmed working; the script-writing step itself is waiting on a refreshed AI key." },
