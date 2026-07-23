@@ -251,6 +251,9 @@ const LAST_UPDATED = "14 July 2026";
 const N8N_BASE = "https://sochconsulting.app.n8n.cloud/workflow/";
 
 const CHANGELOG = [
+  { date:"23 Jul 2026", wf:"Instantly → Lead Intake",
+    what:"Interested email replies now capture the lead's phone number and land pre-assigned to the team",
+    note:"The lead-intake automation already created a CRM card for every interested email reply, but a couple of fields were coming through empty. Two improvements: (1) it now pulls the phone number out of the reply's email signature and saves it to the card's Contact Phone field, and (2) every new lead card is now marked Owner = Riz and assigned to both Riz and Umair, so interested leads show up in their queue automatically instead of unassigned. Verified the phone extraction against a live reply — correctly grabs the signature number and ignores street numbers and zip codes." },
   { date:"23 Jul 2026", wf:"Upwork → Video Generation",
     what:"Fixed the video-script step that was posting a 'script generation failed' placeholder instead of a real script",
     note:"Recent runs were completing but quietly leaving the words '(script generation failed)' where the walkthrough-video script should be. The cause was the AI key the script step was using — it had been revoked, so every call to the writing model was being rejected, and a safety fallback was posting the placeholder text while the run still reported as successful. Pointed the script step at a known-good, active AI key (the same one the proposal writer already uses successfully) and removed the dead key. Both video paths now have working AI access again, so the next approved job will post a real spoken-word script." },
