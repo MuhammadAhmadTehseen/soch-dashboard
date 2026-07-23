@@ -251,6 +251,9 @@ const LAST_UPDATED = "14 July 2026";
 const N8N_BASE = "https://sochconsulting.app.n8n.cloud/workflow/";
 
 const CHANGELOG = [
+  { date:"23 Jul 2026", wf:"Upwork → Video Generation",
+    what:"Fixed the AI-avatar video path so it writes its own script instead of depending on a manually-recorded one",
+    note:"The automation has two video routes: one where a teammate records a Loom, and one where an AI avatar (HeyGen) generates the video automatically. The AI-avatar route was wired wrong — instead of writing its own script, it was looking for a script that only the manual route produces, so on its own it had nothing to feed the avatar. Rewired that route to write a fresh spoken-word script from the job and proposal (no teammate tagged, since nobody records it), post it to the task, and hand that exact script to the avatar generator. The AI-avatar route now runs end to end on its own." },
   { date:"23 Jul 2026", wf:"Instantly → Lead Intake",
     what:"Interested email replies now capture the lead's phone number and land pre-assigned to the team",
     note:"The lead-intake automation already created a CRM card for every interested email reply, but a couple of fields were coming through empty. Two improvements: (1) it now pulls the phone number out of the reply's email signature and saves it to the card's Contact Phone field, and (2) every new lead card is now marked Owner = Riz and assigned to both Riz and Umair, so interested leads show up in their queue automatically instead of unassigned. Verified the phone extraction against a live reply — correctly grabs the signature number and ignores street numbers and zip codes." },
