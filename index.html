@@ -252,6 +252,9 @@ const N8N_BASE = "https://sochconsulting.app.n8n.cloud/workflow/";
 
 const CHANGELOG = [
   { date:"23 Jul 2026", wf:"Upwork → Video Generation",
+    what:"Videos now render vertically (portrait) instead of horizontal",
+    note:"Switched the AI-avatar video output from a widescreen landscape shape to a tall portrait shape (9:16), the format that fits mobile screens and social feeds. Applies to all newly generated videos going forward; videos already made are unchanged." },
+  { date:"23 Jul 2026", wf:"Upwork → Video Generation",
     what:"Finished videos now post their link as a fresh comment on the task instead of trying to edit an existing one",
     note:"A recorded video was being generated and uploaded to Google Drive correctly, but the final step — which tried to edit the existing proposal comment to add the video link — was silently failing. The tool account isn't the author of that comment, and the task system only lets a comment's own author edit it, so the edit was rejected and the video link never appeared on the task even though the run reported success. Changed the workflow to always post the video link as a brand-new comment (which always works) rather than editing someone else's. Also went back and posted the link on the one task where it had gone missing, so nothing is left stranded." },
   { date:"23 Jul 2026", wf:"Upwork → Video Generation",
