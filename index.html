@@ -246,11 +246,14 @@
    run `node scripts/generate-workflow-data.js` to refresh it).
    ================================================================ */
 
-const LAST_UPDATED = "14 July 2026";
+const LAST_UPDATED = "24 July 2026";
 
 const N8N_BASE = "https://sochconsulting.app.n8n.cloud/workflow/";
 
 const CHANGELOG = [
+  { date:"24 Jul 2026", wf:"Guides Auto-Publish",
+    what:"Drop an HTML guide into a shared Drive folder and it auto-publishes to the website — no manual steps",
+    note:"Built a new automation so a guide can be added to the site just by dropping its HTML file into a shared Drive folder. Within about a minute the file is committed to the website's code on the correct branch, which triggers the site to redeploy and list the new guide automatically. It handles both brand-new guides and updates to existing ones, and it checks the filename is web-safe before publishing. Live-tested end to end with a real guide." },
   { date:"23 Jul 2026", wf:"Upwork → Video Generation",
     what:"Upgraded the AI-avatar videos to the newest, highest-quality generation engine",
     note:"Moved the avatar video output onto the provider's latest rendering engine, which produces noticeably sharper visuals, more natural motion, and better lip-sync than the older engine we were on. Verified with a live test render. Applies to all newly generated videos going forward." },
