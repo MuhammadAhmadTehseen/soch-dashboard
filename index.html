@@ -246,11 +246,14 @@
    run `node scripts/generate-workflow-data.js` to refresh it).
    ================================================================ */
 
-const LAST_UPDATED = "24 July 2026";
+const LAST_UPDATED = "27 July 2026";
 
 const N8N_BASE = "https://sochconsulting.app.n8n.cloud/workflow/";
 
 const CHANGELOG = [
+  { date:"27 Jul 2026", wf:"Website Contact Form",
+    what:"New website contact form now logs every submission to a spreadsheet and instantly emails the team",
+    note:"Built a new automation for a marketing site's contact form. When a visitor submits their name, email, and a short note about what's slowing them down, the details are appended as a row to a tracking spreadsheet and a formatted alert email is sent to the team straight away so nobody misses a lead. The site developer just points the form at a single web address to switch it on. Tested end to end: form submission, spreadsheet row, and team email all confirmed working." },
   { date:"24 Jul 2026", wf:"Guides Auto-Publish",
     what:"Drop an HTML guide into a shared Drive folder and it auto-publishes to the website — no manual steps",
     note:"Built a new automation so a guide can be added to the site just by dropping its HTML file into a shared Drive folder. Within about a minute the file is committed to the website's code on the correct branch, which triggers the site to redeploy and list the new guide automatically. It handles both brand-new guides and updates to existing ones, and it checks the filename is web-safe before publishing. Live-tested end to end with a real guide." },
