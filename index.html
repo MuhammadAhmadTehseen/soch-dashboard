@@ -246,11 +246,14 @@
    run `node scripts/generate-workflow-data.js` to refresh it).
    ================================================================ */
 
-const LAST_UPDATED = "27 July 2026";
+const LAST_UPDATED = "28 July 2026";
 
 const N8N_BASE = "https://sochconsulting.app.n8n.cloud/workflow/";
 
 const CHANGELOG = [
+  { date:"28 Jul 2026", wf:"Proposal Generator",
+    what:"Locked a fixed opening line for two team members' proposals so every proposal starts the same, on-brand way",
+    note:"The proposal writer builds each pitch in a specific team member's voice. For two of them we set a fixed opening line that now appears word-for-word at the top of every proposal, instead of the writer inventing a new opener each time. One opener leads with a World Bank consulting background; the other leads with a personal LinkedIn track record. We also cleaned up the older instructions that were telling the writer to keep rewriting the opener, since they conflicted with the new fixed line, and made sure the headline stats in the second opener aren't repeated again lower down in the same proposal. Confirmed live." },
   { date:"27 Jul 2026", wf:"Website Contact Form",
     what:"New website contact form now logs every submission to a spreadsheet and instantly emails the team",
     note:"Built a new automation for a marketing site's contact form. When a visitor submits their name, email, and a short note about what's slowing them down, the details are appended as a row to a tracking spreadsheet and a formatted alert email is sent to the team straight away so nobody misses a lead. The site developer just points the form at a single web address to switch it on. Tested end to end: form submission, spreadsheet row, and team email all confirmed working." },
