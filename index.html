@@ -251,6 +251,9 @@ const LAST_UPDATED = "5 August 2026";
 const N8N_BASE = "https://sochconsulting.app.n8n.cloud/workflow/";
 
 const CHANGELOG = [
+  { date:"6 Aug 2026", wf:"Content Guide Publisher",
+    what:"Completion notice now includes the real clickable web link to the published guide, and automatically notifies the content reviewer",
+    note:"The comment posted back on the content task after a guide goes live now shows the actual website address instead of a partial path, and tags the reviewer directly so they get notified the moment a new guide is ready to check." },
   { date:"5 Aug 2026", wf:"Content Guide Publisher",
     what:"Fixed the completion notice so it now shows the real link to the published guide instead of a broken placeholder",
     note:"The comment this automation posts back on the content task after publishing a guide was showing literal placeholder text instead of the actual file link, so the link never worked. Replaced the placeholder with the real repository and location details so the link now points straight to the published guide. Confirmed the fix took effect; will do a final check on the next real guide publish." },
