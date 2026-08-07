@@ -252,6 +252,9 @@ const N8N_BASE = "https://sochconsulting.app.n8n.cloud/workflow/";
 
 const CHANGELOG = [
   { date:"7 Aug 2026", wf:"Content Repurposer",
+    what:"Moved this workflow onto a faster, cheaper AI model, and fixed the cost figures it was reporting",
+    note:"Roughly a third of the previous cost per run on the same piece of work. Separately, the cost tracker had the wrong rates stored for this model and was under-reporting what it spends by five times, which would have made the saving look bigger than it is — the rates are now correct. Currently being tested to confirm the quality of the written briefs holds up on the smaller model." },
+  { date:"7 Aug 2026", wf:"Content Repurposer",
     what:"Fixed the saved transcript being cut off part-way through — the full transcript is now saved every time",
     note:"The step that cleans up a scraped transcript was trimming it to a fixed length before saving, so anything past that point was silently lost mid-sentence. The saved transcript is now the complete text, and a separate generously-sized copy is used for writing the brief so nothing is capped in practice. The allowance for the brief itself was also raised so longer videos cannot get clipped. Verified on a real task: the saved transcript went from a truncated version to the full text, and the regenerated brief now includes the closing section that was previously missing." },
   { date:"7 Aug 2026", wf:"Deal Desk",
