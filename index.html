@@ -252,6 +252,9 @@ const N8N_BASE = "https://sochconsulting.app.n8n.cloud/workflow/";
 
 const CHANGELOG = [
   { date:"7 Aug 2026", wf:"Content Repurposer",
+    what:"The task status now starts the work and chooses whose voice the content is written in, and the task marks itself finished when done",
+    note:"Setting a task to one of the two person statuses is now all it takes to run it, and the same choice decides whose writing style is used. The task sets itself to complete afterwards, or back to not-started with a plain-English reason if the source link could not be read. Re-running is just setting the status again. A side benefit: the workflow now listens only for status changes, so it no longer reacts to its own saved output — a single request produces two runs instead of the previous eight. Also fixed a long-standing dormant fault in the safety check that stops two runs happening at once; it had never actually worked. Confirmed on a real task end to end." },
+  { date:"7 Aug 2026", wf:"Content Repurposer",
     what:"Moved this workflow onto a faster, cheaper AI model, and fixed the cost figures it was reporting",
     note:"Roughly a third of the previous cost per run on the same piece of work. Separately, the cost tracker had the wrong rates stored for this model and was under-reporting what it spends by five times, which would have made the saving look bigger than it is — the rates are now correct. Currently being tested to confirm the quality of the written briefs holds up on the smaller model." },
   { date:"7 Aug 2026", wf:"Content Repurposer",
