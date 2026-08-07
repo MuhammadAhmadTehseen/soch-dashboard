@@ -246,11 +246,17 @@
    run `node scripts/generate-workflow-data.js` to refresh it).
    ================================================================ */
 
-const LAST_UPDATED = "5 August 2026";
+const LAST_UPDATED = "7 August 2026";
 
 const N8N_BASE = "https://sochconsulting.app.n8n.cloud/workflow/";
 
 const CHANGELOG = [
+  { date:"7 Aug 2026", wf:"Deal Desk",
+    what:"Rewrote how the client letter is written so it reads in one pass: shorter cover, plain English instead of jargon, every abbreviation spelled out, and the dense grey boxes turned into bullet lists and a simple comparison table",
+    note:"The letters were technically correct but hard to read. The writing rules now cap how long any bullet, box line or table cell can be, ban a list of jargon words in favour of plain replacements, limit the document to two highlight boxes, and cut the closing actions from six down to four. Verified by regenerating a real letter end to end: the longest table cell went from 45 words to 9, and no jargon terms remained." },
+  { date:"7 Aug 2026", wf:"Deal Desk",
+    what:"Fixed an intermittent failure where a long call transcript would cut the analysis off mid-way and stop the run",
+    note:"The first analysis step had a size limit that a long transcript could exceed, which produced an incomplete result and a confusing error. The limit was doubled, and the run now reports plainly when a response was cut short instead of failing with a misleading message." },
   { date:"6 Aug 2026", wf:"Content Guide Publisher",
     what:"Removed a leftover duplicate back-to-guides link, fixed a broken link in the completion notice, and added a style rule to keep future guides consistent",
     note:"Caught from a live screenshot after the earlier fix went out: one redundant navigation link was still showing on every guide page, the direct link in the completion notice pointed to the wrong address format, and a punctuation style rule was added so future guides stay consistent." },
