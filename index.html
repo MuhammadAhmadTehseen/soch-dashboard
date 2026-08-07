@@ -251,6 +251,9 @@ const LAST_UPDATED = "7 August 2026";
 const N8N_BASE = "https://sochconsulting.app.n8n.cloud/workflow/";
 
 const CHANGELOG = [
+  { date:"7 Aug 2026", wf:"Content Repurposer",
+    what:"Fixed the saved transcript being cut off part-way through — the full transcript is now saved every time",
+    note:"The step that cleans up a scraped transcript was trimming it to a fixed length before saving, so anything past that point was silently lost mid-sentence. The saved transcript is now the complete text, and a separate generously-sized copy is used for writing the brief so nothing is capped in practice. The allowance for the brief itself was also raised so longer videos cannot get clipped. Verified on a real task: the saved transcript went from a truncated version to the full text, and the regenerated brief now includes the closing section that was previously missing." },
   { date:"7 Aug 2026", wf:"Deal Desk",
     what:"Rewrote how the client letter is written so it reads in one pass: shorter cover, plain English instead of jargon, every abbreviation spelled out, and the dense grey boxes turned into bullet lists and a simple comparison table",
     note:"The letters were technically correct but hard to read. The writing rules now cap how long any bullet, box line or table cell can be, ban a list of jargon words in favour of plain replacements, limit the document to two highlight boxes, and cut the closing actions from six down to four. Verified by regenerating a real letter end to end: the longest table cell went from 45 words to 9, and no jargon terms remained." },
