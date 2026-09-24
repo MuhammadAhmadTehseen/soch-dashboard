@@ -251,6 +251,9 @@ const LAST_UPDATED = "11 September 2026";
 const N8N_BASE = "https://sochconsulting.app.n8n.cloud/workflow/";
 
 const CHANGELOG = [
+  { date:"24 Sep 2026", wf:"Content Studio — new post alerts",
+    what:"When a client's new LinkedIn post goes live, the team now gets a message in the team chat, tagging everyone and asking them to like and comment on it.",
+    note:"This replaces the \"please like these posts\" message the team was posting by hand. It uses the Monday, Wednesday and Friday reply run, which already collects each client's posts from the past week, so it adds no new cost. Every post that has been announced is noted in the client's sheet, so the same post is never announced twice even though the same week is checked three times. Only posts from the last four days are announced, which covers the weekend gap, and reposts are skipped. It runs for clients whose scheduled reply run is switched on. Because the check runs three times a week, a post can reach the team a day or two after it goes live." },
   { date:"24 Sep 2026", wf:"Content Studio — comment runs",
     what:"The comment and reply runs now show what they actually cost instead of $0.00, and a comment the AI returns empty is written again instead of being dropped.",
     note:"The cost was being read after it had already been saved and cleared, so every run showed zero even though the real spend, around ten cents per daily run, was recorded correctly behind the scenes and the spending limit was never affected. Separately, the AI occasionally chose to comment on a post but returned no text; the correction step then kept that empty answer, and the post was counted as not worth commenting on. An empty answer now gets one fresh attempt, and the AI is told it may instead decline and say why." },
