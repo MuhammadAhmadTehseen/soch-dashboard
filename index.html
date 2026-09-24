@@ -251,6 +251,9 @@ const LAST_UPDATED = "11 September 2026";
 const N8N_BASE = "https://sochconsulting.app.n8n.cloud/workflow/";
 
 const CHANGELOG = [
+  { date:"24 Sep 2026", wf:"Content Studio — daily comment run",
+    what:"The daily comment run now keeps going until it has three comments: when the AI decides a post isn't worth commenting on, the next post down the list takes its place.",
+    note:"Before, the run chose its three posts up front. If the AI passed on two of them, the day ended with one comment, even when other good posts from other creators were ranked just below. It now works down the list until it has three comments, runs out of posts, or has tried nine, which caps the cost. The run log also now records why each post was passed on, so the team can check whether the AI was right." },
   { date:"24 Sep 2026", wf:"Proposal Generator — LinkedIn proposals",
     what:"Every LinkedIn proposal now ends with a short line linking to a portfolio of relevant work, just above the sign-off.",
     note:"The line is one of two fixed sentences, picked at random, and is added by the workflow after the AI has written the proposal, not by the AI itself. That matters because the step that turns marked words into bold text would also have turned a link into plain, unclickable text if the AI had written it in bold, and an AI can also copy a long link wrong. The social media proposals are unchanged and still carry no links." },
