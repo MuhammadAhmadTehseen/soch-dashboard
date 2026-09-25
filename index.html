@@ -251,6 +251,9 @@ const LAST_UPDATED = "11 September 2026";
 const N8N_BASE = "https://sochconsulting.app.n8n.cloud/workflow/";
 
 const CHANGELOG = [
+  { date:"25 Sep 2026", wf:"Content Studio — new post alerts",
+    what:"The new post alerts now reach the team: each alert tags everyone in the team chat, and the first round went out today for three clients.",
+    note:"The first scheduled alert this morning was turned away by ClickUp because the channel still listed someone who had left the workspace, and tagging a person who is no longer there makes ClickUp refuse the whole message. The alert now only tags current team members, and if a message is ever refused because of a tag it is sent again without tags, so the alert itself is never lost. A test run straight after the fix posted all three alerts, and the same posts won't be announced again on Monday." },
   { date:"24 Sep 2026", wf:"Content Studio — new post alerts",
     what:"When a client's new LinkedIn post goes live, the team now gets a message in the team chat, tagging everyone and asking them to like and comment on it.",
     note:"This replaces the \"please like these posts\" message the team was posting by hand. It uses the Monday, Wednesday and Friday reply run, which already collects each client's posts from the past week, so it adds no new cost. Every post that has been announced is noted in the client's sheet, so the same post is never announced twice even though the same week is checked three times. Only posts from the last four days are announced, which covers the weekend gap, and reposts are skipped. It runs for clients whose scheduled reply run is switched on. Because the check runs three times a week, a post can reach the team a day or two after it goes live." },
